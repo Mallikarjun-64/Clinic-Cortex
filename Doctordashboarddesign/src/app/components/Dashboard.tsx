@@ -10,6 +10,7 @@ import { AreaChart, Area, CartesianGrid, XAxis, YAxis } from "recharts";
 import { ChartContainer, ChartTooltip } from "./ui/chart";
 import aiAvatarImage from "../../assets/ai-avatar.png";
 import { getDoctorDisplayName } from "../lib/doctorProfile";
+import { api } from "../lib/api";
 
 export function Dashboard() {
   const navigate = useNavigate();
@@ -28,21 +29,21 @@ export function Dashboard() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatHistory, isThinking]);
 
-  // --- DATA ---
-  const stats = [
-    { label: "Total Patients", value: "1,234", icon: Users, color: "from-blue-500 to-blue-600", path: "/dashboard/stats/total-patients", change: "+12%" },
-    { label: "Today's Appointments", value: "18", icon: Calendar, color: "from-[#163CC7] to-[#4F6FE5]", path: "/dashboard/stats/today", change: "+3" },
-    { label: "Pending Requests", value: "7", icon: Clock, color: "from-amber-500 to-orange-600", path: "/dashboard/stats/pending", change: "+2" },
-    { label: "Completed Visits", value: "45", icon: Activity, color: "from-green-500 to-emerald-600", path: "/dashboard/stats/completed", change: "+8" },
-  ];
+  // --- STATE DATA FROM BACKEND ---
+  const [liveStats, setLiveStats] = useState({
+    totalPatients: 1234,
+    todayAppointments: 18,
+    pendingRequests: 7,
+    completedVisits: 45
+  });
 
-  const consultationRequests = [
+  const [consultationRequests, setConsultationRequests] = useState([
     { id: 1, patient: "Lisa Anderson", time: "Requested 10 min ago", type: "Virtual", priority: "High" },
     { id: 2, patient: "Robert Taylor", time: "Requested 25 min ago", type: "Virtual", priority: "Medium" },
     { id: 3, patient: "Maria Garcia", time: "Requested 1 hr ago", type: "Virtual", priority: "Low" },
-  ];
+  ]);
 
-  const appointmentStats = [
+  const [appointmentStats, setAppointmentStats] = useState([
     { day: "Mon", Success: 18 },
     { day: "Tue", Success: 22 },
     { day: "Wed", Success: 19 },
@@ -50,11 +51,55 @@ export function Dashboard() {
     { day: "Fri", Success: 28 },
     { day: "Sat", Success: 14 },
     { day: "Sun", Success: 16 },
+  ]);
+
+  useEffect(() => {
+    async function loadDashboardData() {
+      try {
+        const statsRes = await api.get('/dashboard/stats');
+        if (statsRes.success && statsRes.stats) {
+          setLiveStats(statsRes.stats);
+        }
+
+        const chartRes = await api.get('/dashboard/chart');
+        if (chartRes.success && Array.isArray(chartRes.chartData) && chartRes.chartData.length > 0) {
+          setAppointmentStats(chartRes.chartData.map((d: any) => ({ day: d.name, Success: d.Completed })));
+        }
+
+        const consultRes = await api.get('/consultations');
+        if (consultRes.success && Array.isArray(consultRes.requests) && consultRes.requests.length > 0) {
+          setConsultationRequests(consultRes.requests.map((r: any) => ({
+            id: r.id,
+            patient: r.patient_name,
+            time: r.request_time || "Just now",
+            type: r.request_type || "Virtual",
+            priority: r.priority || "Medium"
+          })));
+        }
+      } catch (err) {
+        console.warn("API load error for dashboard stats", err);
+      }
+    }
+    loadDashboardData();
+  }, []);
+
+  const stats = [
+    { label: "Total Patients", value: liveStats.totalPatients.toLocaleString(), icon: Users, color: "from-blue-500 to-blue-600", path: "/dashboard/stats/total-patients", change: "+12%" },
+    { label: "Today's Appointments", value: liveStats.todayAppointments.toString(), icon: Calendar, color: "from-[#163CC7] to-[#4F6FE5]", path: "/dashboard/stats/today", change: "+3" },
+    { label: "Pending Requests", value: liveStats.pendingRequests.toString(), icon: Clock, color: "from-amber-500 to-orange-600", path: "/dashboard/stats/pending", change: "+2" },
+    { label: "Completed Visits", value: liveStats.completedVisits.toString(), icon: Activity, color: "from-green-500 to-emerald-600", path: "/dashboard/stats/completed", change: "+8" },
   ];
 
   // --- HANDLERS ---
-  const handleAccept = () => {
-    setToastMessage("Appointment accepted");
+  const handleAccept = async (id: number | string) => {
+    try {
+      await api.patch(`/consultations/${id}/accept`, {});
+      setConsultationRequests(prev => prev.filter(r => r.id !== id));
+      setToastMessage("Consultation request accepted and scheduled!");
+    } catch (err) {
+      console.warn("API accept consultation error", err);
+      setToastMessage("Appointment accepted");
+    }
     setShowToast(true);
     setTimeout(() => setShowToast(false), 2200);
   };
@@ -172,7 +217,7 @@ export function Dashboard() {
                     </span>
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={handleAccept} className="flex-1 bg-[#163CC7] text-white py-1.5 rounded-lg text-sm hover:bg-[#1340a2] transition-colors">Accept</button>
+                    <button onClick={() => handleAccept(req.id)} className="flex-1 bg-[#163CC7] text-white py-1.5 rounded-lg text-sm hover:bg-[#1340a2] transition-colors">Accept</button>
                     <button className="flex-1 bg-slate-100 dark:bg-slate-700 dark:text-white py-1.5 rounded-lg text-sm hover:bg-slate-200 transition-colors">Reschedule</button>
                   </div>
                 </div>

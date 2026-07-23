@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
+import { api } from "../lib/api";
 
 const AUTH_KEY = "cliniccortex-auth";
 const ACCOUNT_KEY = "cliniccortex-account";
@@ -29,24 +30,34 @@ export function Login() {
     }
   }, [navigate]);
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
       setError("Email and password are required.");
       return;
     }
-    const savedAccount = getStoredAccount();
-    if (!savedAccount) {
-      setError("No registered doctor found. Please sign up first.");
-      return;
+    
+    try {
+      setError("");
+      const response = await api.post('/auth/login', { email, password });
+      
+      if (response.success && response.token) {
+        localStorage.setItem("cliniccortex-token", response.token);
+        localStorage.setItem(AUTH_KEY, "true");
+        // Save doctor metadata locally for display fallback
+        localStorage.setItem("clinic_cortex_verified_doctor", JSON.stringify({
+          firstName: response.doctor.firstName,
+          lastName: response.doctor.lastName,
+          profEmail: response.doctor.email
+        }));
+        navigate("/dashboard", { replace: true });
+      } else {
+        setError(response.message || "Failed to log in.");
+      }
+    } catch (err: any) {
+      console.error("Login call failed:", err);
+      setError(err.message || "Invalid credentials. Please verify your email and password.");
     }
-    if (email !== savedAccount.email || password !== savedAccount.password) {
-      setError("Invalid credentials. Please check email and password.");
-      return;
-    }
-    localStorage.setItem(AUTH_KEY, "true");
-    setError("");
-    navigate("/dashboard", { replace: true });
   };
 
   return (

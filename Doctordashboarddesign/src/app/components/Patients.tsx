@@ -1,18 +1,51 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Search, Filter, UserPlus, Phone, Mail, MapPin, Calendar, FileText, Activity } from "lucide-react";
+import { api } from "../lib/api";
 
 export function Patients() {
-  const [selectedPatient, setSelectedPatient] = useState<number | null>(1);
+  const [selectedPatient, setSelectedPatient] = useState<number | string | null>(1);
   const [searchTerm, setSearchTerm] = useState("");
   const [conditionFilter, setConditionFilter] = useState("all");
 
-  const patients = [
+  const [patients, setPatients] = useState<any[]>([
     { id: 1, name: "Meghna k Gunaga", age: 45, gender: "Male", lastVisit: "Mar 28, 2026", condition: "Hypertension", phone: "+1 234-567-8901", email: "john.smith@email.com", address: "123 Main St, City" },
     { id: 2, name: "Emma Wilson", age: 32, gender: "Female", lastVisit: "Mar 30, 2026", condition: "Diabetes Type 2", phone: "+1 234-567-8902", email: "emma.wilson@email.com", address: "456 Oak Ave, City" },
     { id: 3, name: "Michael Brown", age: 58, gender: "Male", lastVisit: "Apr 1, 2026", condition: "Asthma", phone: "+1 234-567-8903", email: "michael.brown@email.com", address: "789 Pine Rd, City" },
     { id: 4, name: "Sarah Davis", age: 41, gender: "Female", lastVisit: "Mar 25, 2026", condition: "Migraine", phone: "+1 234-567-8904", email: "sarah.davis@email.com", address: "321 Elm St, City" },
     { id: 5, name: "James Miller", age: 36, gender: "Male", lastVisit: "Apr 2, 2026", condition: "Back Pain", phone: "+1 234-567-8905", email: "james.miller@email.com", address: "654 Birch Ln, City" },
-  ];
+  ]);
+
+  useEffect(() => {
+    async function loadPatients() {
+      try {
+        const queryParams = new URLSearchParams();
+        if (searchTerm) queryParams.append('search', searchTerm);
+        if (conditionFilter && conditionFilter !== 'all') queryParams.append('condition', conditionFilter);
+
+        const res = await api.get(`/patients?${queryParams.toString()}`);
+        if (res.success && Array.isArray(res.patients) && res.patients.length > 0) {
+          const mapped = res.patients.map((p: any) => ({
+            id: p.id,
+            name: p.name,
+            age: p.age || 30,
+            gender: p.gender || "Male",
+            lastVisit: p.last_visit ? new Date(p.last_visit).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Apr 2, 2026",
+            condition: p.condition || "General",
+            phone: p.phone || "+1 234-567-8900",
+            email: p.email || "patient@clinic.com",
+            address: p.address || "Main Street"
+          }));
+          setPatients(mapped);
+          if (mapped.length > 0) {
+            setSelectedPatient(mapped[0].id);
+          }
+        }
+      } catch (err) {
+        console.warn("API patients fetch warning", err);
+      }
+    }
+    loadPatients();
+  }, [searchTerm, conditionFilter]);
 
   const filteredPatients = patients.filter((patient) => {
     const matchesSearch = searchTerm.trim()

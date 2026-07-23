@@ -1,0 +1,195 @@
+import express from 'express';
+import { query } from '../config/db.js';
+import { authenticateToken } from '../middleware/auth.js';
+import { appointmentValidationRules } from '../middleware/validate.js';
+
+const router = express.Router();
+
+// @route   GET /api/appointments
+// @desc    List appointments for the logged-in doctor, with tabs/filters
+router.get('/', authenticateToken, async (req, res) => {
+  const { tab, type, date, search } = req.query;
+
+  try {
+    let sql = 'SELECT * FROM appointments WHERE doctor_id = $1';
+    const params = [req.user.id];
+
+    // Filter by tab status groups
+    if (tab) {
+      if (tab === 'upcoming') {
+        params.push('Confirmed');
+        params.push('Scheduled');
+        params.push('Waiting');
+        sql += ` AND status IN ($${params.length - 2}, $${params.length - 1}, $${params.length})`;
+      } else if (tab === 'completed') {
+        params.push('Completed');
+        sql += ` AND status = $${params.length}`;
+      } else if (tab === 'missed') {
+        params.push('Missed');
+        params.push('Cancelled');
+        sql += ` AND status IN ($${params.length - 1}, $${params.length})`;
+      } else {
+        params.push(tab);
+        sql += ` AND status = $${params.length}`;
+      }
+    }
+
+    // Filter by visit type (Clinic, Video, Home)
+    if (type) {
+      params.push(type);
+      sql += ` AND visit_type = $${params.length}`;
+    }
+
+    // Filter by appointment date
+    if (date) {
+      params.push(date);
+      sql += ` AND appointment_date = $${params.length}`;
+    }
+
+    // Search by patient name or condition
+    if (search) {
+      params.push(`%${search}%`);
+      sql += ` AND (patient_name ILIKE $${params.length} OR condition ILIKE $${params.length})`;
+    }
+
+    sql += ' ORDER BY appointment_date ASC, appointment_time ASC';
+
+    const result = await query(sql, params);
+    res.status(200).json({ success: true, count: result.rows.length, appointments: result.rows });
+  } catch (err) {
+    console.error('List Appointments Error:', err);
+    res.status(500).json({ success: false, message: 'Server error listing appointments' });
+  }
+});
+
+// @route   GET /api/appointments/:id
+// @desc    Get detailed record of a single appointment
+router.get('/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const result = await query(
+      'SELECT * FROM appointments WHERE id = $1 AND doctor_id = $2',
+      [id, req.user.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Appointment not found.' });
+    }
+
+    res.status(200).json({ success: true, appointment: result.rows[0] });
+  } catch (err) {
+    console.error('Fetch Appointment Error:', err);
+    res.status(500).json({ success: false, message: 'Server error retrieving appointment' });
+  }
+});
+
+// @route   POST /api/appointments
+// @desc    Create a new appointment slot booking
+router.post('/', authenticateToken, appointmentValidationRules, async (req, res) => {
+  const { patientId, patientName, patientAge, visitType, date, time, condition, notes, vitals } = req.body;
+
+  try {
+    // 1. If patientId is specified, check existence and retrieve properties
+    let finalPatientName = patientName;
+    let finalPatientAge = patientAge;
+
+    if (patientId) {
+      const patientCheck = await query('SELECT name, age FROM patients WHERE id = $1', [patientId]);
+      if (patientCheck.rows.length > 0) {
+        finalPatientName = patientCheck.rows[0].name;
+        finalPatientAge = patientCheck.rows[0].age;
+      }
+    }
+
+    // 2. Perform insertion
+    const result = await query(
+      `INSERT INTO appointments (doctor_id, patient_id, patient_name, patient_age, visit_type, appointment_date, appointment_time, status, condition, notes, vitals)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'Scheduled', $8, $9, $10)
+       RETURNING *`,
+      [req.user.id, patientId || null, finalPatientName, finalPatientAge, visitType, date, time, condition, notes, vitals || '{}']
+    );
+
+    res.status(201).json({
+      success: true,
+      message: 'Appointment scheduled successfully',
+      appointment: result.rows[0]
+    });
+  } catch (err) {
+    console.error('Create Appointment Error:', err);
+    res.status(500).json({ success: false, message: 'Server error scheduling appointment' });
+  }
+});
+
+// @route   PUT /api/appointments/:id
+// @desc    Reschedule/update details of an appointment
+router.put('/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { date, time, visitType, condition, notes, vitals } = req.body;
+
+  try {
+    const check = await query('SELECT id FROM appointments WHERE id = $1 AND doctor_id = $2', [id, req.user.id]);
+    if (check.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Appointment not found' });
+    }
+
+    const result = await query(
+      `UPDATE appointments
+       SET appointment_date = COALESCE($1, appointment_date),
+           appointment_time = COALESCE($2, appointment_time),
+           visit_type = COALESCE($3, visit_type),
+           condition = COALESCE($4, condition),
+           notes = COALESCE($5, notes),
+           vitals = COALESCE($6, vitals),
+           updated_at = NOW()
+       WHERE id = $7 AND doctor_id = $8
+       RETURNING *`,
+      [date, time, visitType, condition, notes, vitals, id, req.user.id]
+    );
+
+    res.status(200).json({
+      success: true,
+      message: 'Appointment rescheduled/updated successfully',
+      appointment: result.rows[0]
+    });
+  } catch (err) {
+    console.error('Update Appointment Error:', err);
+    res.status(500).json({ success: false, message: 'Server error updating appointment' });
+  }
+});
+
+// @route   PATCH /api/appointments/:id/status
+// @desc    Quick update status (Scheduled, Confirmed, Waiting, Completed, Cancelled, Missed)
+router.patch('/:id/status', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+
+  if (!status) {
+    return res.status(400).json({ success: false, message: 'Status is required' });
+  }
+
+  try {
+    const result = await query(
+      `UPDATE appointments
+       SET status = $1, updated_at = NOW()
+       WHERE id = $2 AND doctor_id = $3
+       RETURNING *`,
+      [status, id, req.user.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Appointment not found' });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Appointment status updated to ${status}`,
+      appointment: result.rows[0]
+    });
+  } catch (err) {
+    console.error('Patch Status Error:', err);
+    res.status(500).json({ success: false, message: 'Server error updating appointment status' });
+  }
+});
+
+export default router;

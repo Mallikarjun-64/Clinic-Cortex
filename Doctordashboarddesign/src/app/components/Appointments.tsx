@@ -5,6 +5,7 @@ import {
   Droplets, Heart, Activity, Thermometer, Moon 
 } from "lucide-react";
 import { Appointment, loadAppointments, saveAppointments } from "../lib/appointmentData";
+import { api } from "../lib/api";
 
 export function Appointments() {
   const [activeTab, setActiveTab] = useState("upcoming");
@@ -22,10 +23,40 @@ export function Appointments() {
   const [appointments, setAppointments] = useState<Appointment[]>(() => loadAppointments());
 
   useEffect(() => {
-    saveAppointments(appointments);
-  }, [appointments]);
+    async function fetchAppointments() {
+      try {
+        const queryParams = new URLSearchParams();
+        if (activeTab) queryParams.append('tab', activeTab);
+        if (filterType && filterType !== 'all') queryParams.append('type', filterType);
 
-  const handleCancelAppointment = (id: number) => {
+        const res = await api.get(`/appointments?${queryParams.toString()}`);
+        if (res.success && Array.isArray(res.appointments) && res.appointments.length > 0) {
+          const mapped = res.appointments.map((item: any) => ({
+            id: item.id,
+            patient: item.patient_name || item.patient || "Patient",
+            age: item.patient_age || 30,
+            type: item.visit_type || "Clinic",
+            date: item.appointment_date ? new Date(item.appointment_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Apr 2, 2026",
+            time: item.appointment_time || "10:00 AM",
+            status: item.status || "Scheduled",
+            condition: item.condition || "Consultation"
+          }));
+          setAppointments(mapped);
+          saveAppointments(mapped);
+        }
+      } catch (err) {
+        console.warn("API appointments fetch warning, using stored cache", err);
+      }
+    }
+    fetchAppointments();
+  }, [activeTab, filterType]);
+
+  const handleCancelAppointment = async (id: number | string) => {
+    try {
+      await api.patch(`/appointments/${id}/status`, { status: "Cancelled" });
+    } catch (err) {
+      console.warn("API status update error", err);
+    }
     setAppointments((prev) =>
       prev.map((apt) =>
         apt.id === id ? { ...apt, status: "Cancelled" } : apt
@@ -35,7 +66,12 @@ export function Appointments() {
     setOpenOptionsId(null);
   };
 
-  const handleDeleteAppointment = (id: number) => {
+  const handleDeleteAppointment = async (id: number | string) => {
+    try {
+      await api.delete(`/appointments/${id}`);
+    } catch (err) {
+      console.warn("API delete appointment error", err);
+    }
     setAppointments((prev) => prev.filter((apt) => apt.id !== id));
     triggerToast("Appointment deleted successfully.");
     setOpenOptionsId(null);
