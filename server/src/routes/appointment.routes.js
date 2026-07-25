@@ -2,6 +2,7 @@ import express from 'express';
 import { query } from '../config/db.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { appointmentValidationRules } from '../middleware/validate.js';
+import { verifyToken, verifyPatientToken } from '../utils/jwt.js';
 
 const router = express.Router();
 
@@ -84,30 +85,106 @@ router.get('/:id', authenticateToken, async (req, res) => {
   }
 });
 
+// Custom middleware to authenticate either Doctor or Patient token
+const authenticateEitherUser = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({
+      success: false,
+      message: 'Access Denied: Missing authentication token'
+    });
+  }
+
+  // 1. Try Doctor token first
+  try {
+    const decodedDoctor = verifyToken(token);
+    req.user = decodedDoctor;
+    req.isDoctor = true;
+    return next();
+  } catch (err) {
+    // Doctor token verification failed, try patient token
+  }
+
+  // 2. Try Patient token
+  try {
+    const decodedPatient = verifyPatientToken(token);
+    req.patient = decodedPatient;
+    req.user = decodedPatient;
+    req.isPatient = true;
+    return next();
+  } catch (err) {
+    return res.status(403).json({
+      success: false,
+      message: 'Access Denied: Invalid or expired authentication token'
+    });
+  }
+};
+
 // @route   POST /api/appointments
-// @desc    Create a new appointment slot booking
-router.post('/', authenticateToken, appointmentValidationRules, async (req, res) => {
-  const { patientId, patientName, patientAge, visitType, date, time, condition, notes, vitals } = req.body;
+// @desc    Create a new appointment slot booking (Doctor or Patient caller)
+router.post('/', authenticateEitherUser, appointmentValidationRules, async (req, res) => {
+  const { doctorId, patientId, patientName, patientAge, visitType, date, time, condition, notes, vitals } = req.body;
 
   try {
-    // 1. If patientId is specified, check existence and retrieve properties
+    let finalDoctorId;
+    let finalPatientId;
     let finalPatientName = patientName;
     let finalPatientAge = patientAge;
 
-    if (patientId) {
-      const patientCheck = await query('SELECT name, age FROM patients WHERE id = $1', [patientId]);
-      if (patientCheck.rows.length > 0) {
-        finalPatientName = patientCheck.rows[0].name;
-        finalPatientAge = patientCheck.rows[0].age;
+    if (req.isDoctor) {
+      // Doctor request: doctor_id comes from authenticated doctor token, patientId comes from req.body
+      finalDoctorId = req.user.id;
+      finalPatientId = patientId || null;
+
+      if (patientId) {
+        const patientCheck = await query('SELECT name, age FROM patients WHERE id = $1', [patientId]);
+        if (patientCheck.rows.length > 0) {
+          finalPatientName = patientCheck.rows[0].name;
+          finalPatientAge = patientCheck.rows[0].age;
+        }
+      }
+    } else if (req.isPatient) {
+      // Patient request: doctor_id comes from req.body.doctorId
+      if (!doctorId) {
+        return res.status(400).json({ success: false, message: 'doctorId is required' });
+      }
+
+      // Validate doctorId exists in doctors table
+      const doctorCheck = await query('SELECT id FROM doctors WHERE id = $1', [doctorId]);
+      if (doctorCheck.rows.length === 0) {
+        return res.status(404).json({ success: false, message: 'Doctor not found' });
+      }
+
+      finalDoctorId = doctorId;
+      finalPatientId = req.patient.id; // Patient's own authenticated ID
+
+      // Retrieve patient's name and age from DB if not provided
+      const patientInfo = await query('SELECT name, age FROM patients WHERE id = $1', [req.patient.id]);
+      if (patientInfo.rows.length > 0) {
+        if (!finalPatientName) finalPatientName = patientInfo.rows[0].name;
+        if (!finalPatientAge) finalPatientAge = patientInfo.rows[0].age;
       }
     }
 
-    // 2. Perform insertion
+    // Perform insertion
     const result = await query(
       `INSERT INTO appointments (doctor_id, patient_id, patient_name, patient_age, visit_type, appointment_date, appointment_time, status, condition, notes, vitals)
        VALUES ($1, $2, $3, $4, $5, $6, $7, 'Scheduled', $8, $9, $10)
        RETURNING *`,
-      [req.user.id, patientId || null, finalPatientName, finalPatientAge, visitType, date, time, condition, notes, vitals || '{}']
+      [
+        finalDoctorId,
+        finalPatientId,
+        finalPatientName,
+        finalPatientAge,
+        visitType,
+        date,
+        time,
+        condition || 'General Consult',
+        notes || null,
+        vitals || '{}'
+      ]
     );
 
     res.status(201).json({
