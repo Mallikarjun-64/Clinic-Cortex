@@ -4,6 +4,7 @@ import {
   Stethoscope, UserRound, FlaskConical, ShieldCheck, X,
 } from "lucide-react";
 import { LANGUAGES, useCC, type Role } from "@/lib/cc-state";
+import { api } from "@/lib/api";
 
 /* ---------------- Gateway Splash ---------------- */
 export function Gateway() {
@@ -146,13 +147,31 @@ export function Identity() {
 
 /* ---------------- Login ---------------- */
 export function Login() {
-  const { setFlow, t } = useCC();
-  const [otp, setOtp] = useState(true);
-  const [scanning, setScanning] = useState(false);
+  const { setFlow, setToken, setUser, t } = useCC();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
 
-  const runBiometric = () => {
-    setScanning(true);
-    setTimeout(() => { setScanning(false); setFlow("app"); }, 1600);
+  const handleLogin = async () => {
+    if (!email || !password) {
+      setErrorMsg("Please enter both email and password.");
+      return;
+    }
+    setLoading(true);
+    setErrorMsg("");
+    try {
+      const res = await api.post('/patient-auth/login', { email, password });
+      if (res.success && res.token) {
+        setToken(res.token);
+        setUser(res.patient);
+        setFlow("app");
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message || "Failed to sign in");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -163,36 +182,38 @@ export function Login() {
       </div>
       <div className="px-6 -mt-8 flex-1">
         <div className="bg-card border rounded-3xl p-6 cc-shadow cc-fade-up">
-          <label className="text-xs font-medium text-muted-foreground">Mobile number / CID</label>
-          <input className="mt-1 w-full rounded-2xl border bg-background px-4 py-3 outline-none focus:border-primary transition-colors" placeholder="+91 9876543210" />
-          <div className="mt-4 flex items-center justify-between">
-            <span className="text-sm">Login with OTP</span>
-            <button onClick={() => setOtp(!otp)} className={`relative w-12 h-7 rounded-full transition-colors ${otp ? "bg-primary" : "bg-muted"}`}>
-              <span className={`absolute top-1 left-1 w-5 h-5 rounded-full bg-white transition-transform ${otp ? "translate-x-5" : ""}`} />
-            </button>
-          </div>
-          {!otp && (
-            <div className="mt-4 cc-fade-up">
-              <label className="text-xs font-medium text-muted-foreground">Password</label>
-              <input type="password" className="mt-1 w-full rounded-2xl border bg-background px-4 py-3 outline-none focus:border-primary" placeholder="••••••••" />
+          {errorMsg && (
+            <div className="p-3 mb-4 rounded-xl bg-red-50 dark:bg-red-950/40 text-red-600 text-xs font-semibold">
+              {errorMsg}
             </div>
           )}
-          <button onClick={() => setFlow("app")} className="mt-5 w-full cc-grad-deep text-white font-semibold rounded-2xl py-3.5 active:scale-[0.98] transition-transform">
-            {otp ? "Send OTP" : "Sign in"}
-          </button>
-          <div className="mt-6 flex items-center gap-3 text-xs text-muted-foreground">
-            <div className="h-px flex-1 bg-border" /> or <div className="h-px flex-1 bg-border" />
+          <label className="text-xs font-medium text-muted-foreground">Email address</label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="mt-1 w-full rounded-2xl border bg-background px-4 py-3 outline-none focus:border-primary transition-colors text-sm"
+            placeholder="patient@example.com"
+          />
+          
+          <div className="mt-4">
+            <label className="text-xs font-medium text-muted-foreground">Password</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+              className="mt-1 w-full rounded-2xl border bg-background px-4 py-3 outline-none focus:border-primary text-sm"
+              placeholder="••••••••"
+            />
           </div>
+
           <button
-            onClick={runBiometric}
-            className="mt-6 w-full flex flex-col items-center gap-2 group"
+            onClick={handleLogin}
+            disabled={loading}
+            className="mt-6 w-full cc-grad-deep text-white font-semibold rounded-2xl py-3.5 active:scale-[0.98] transition-transform flex justify-center items-center"
           >
-            <div className={`w-20 h-20 rounded-full flex items-center justify-center transition-all ${
-              scanning ? "bg-primary text-white cc-pulse-ring" : "bg-primary/10 text-primary group-hover:bg-primary/20"
-            }`}>
-              <Fingerprint className="w-10 h-10" />
-            </div>
-            <span className="text-xs text-muted-foreground">{scanning ? "Scanning fingerprint…" : "Touch to use biometric"}</span>
+            {loading ? <span className="animate-pulse">Signing in…</span> : "Sign in"}
           </button>
         </div>
         <button onClick={() => setFlow("app")} className="mt-6 w-full text-center text-sm text-primary font-medium underline-offset-4 hover:underline">
@@ -209,16 +230,18 @@ export function Login() {
 
 /* ---------------- Signup ---------------- */
 export function Signup() {
-  const { setFlow } = useCC();
+  const { setFlow, setToken, setUser } = useCC();
   const [form, setForm] = useState({
     name: "", age: "", gender: "", email: "", phone: "",
     password: "", confirm: "", dessie: "", income: "",
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(false);
+  const [apiError, setApiError] = useState("");
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
-  const submit = () => {
+  const submit = async () => {
     const e: Record<string, string> = {};
     if (!form.name) e.name = "Required";
     if (!form.age || +form.age < 1) e.age = "Invalid";
@@ -227,9 +250,33 @@ export function Signup() {
     if (!/^\+?\d{7,15}$/.test(form.phone)) e.phone = "Invalid phone";
     if (form.password.length < 6) e.password = "Min 6 chars";
     if (form.password !== form.confirm) e.confirm = "Mismatch";
-    if (!form.income) e.income = "Required";
     setErrors(e);
-    if (Object.keys(e).length === 0) setFlow("app");
+
+    if (Object.keys(e).length === 0) {
+      setLoading(true);
+      setApiError("");
+      try {
+        const res = await api.post('/patient-auth/signup', {
+          name: form.name,
+          age: form.age,
+          gender: form.gender,
+          email: form.email,
+          phone: form.phone,
+          password: form.password,
+          income: form.income,
+          address: form.dessie
+        });
+        if (res.success && res.token) {
+          setToken(res.token);
+          setUser(res.patient);
+          setFlow("app");
+        }
+      } catch (err: any) {
+        setApiError(err.message || "Registration failed");
+      } finally {
+        setLoading(false);
+      }
+    }
   };
 
   const F = (label: string, k: string, type = "text", opts?: string[]) => (
@@ -239,7 +286,7 @@ export function Signup() {
         <select
           value={(form as any)[k]}
           onChange={(ev) => set(k, ev.target.value)}
-          className="mt-1 w-full rounded-2xl border bg-background px-4 py-3 outline-none focus:border-primary"
+          className="mt-1 w-full rounded-2xl border bg-background px-4 py-3 outline-none focus:border-primary text-sm"
         >
           <option value="">Select…</option>
           {opts.map((o) => <option key={o} value={o}>{o}</option>)}
@@ -249,7 +296,7 @@ export function Signup() {
           type={type}
           value={(form as any)[k]}
           onChange={(ev) => set(k, ev.target.value)}
-          className="mt-1 w-full rounded-2xl border bg-background px-4 py-3 outline-none focus:border-primary"
+          className="mt-1 w-full rounded-2xl border bg-background px-4 py-3 outline-none focus:border-primary text-sm"
         />
       )}
       {errors[k] && <p className="text-xs text-red-500 mt-1">{errors[k]}</p>}
@@ -267,6 +314,11 @@ export function Signup() {
       </div>
       <div className="px-5 -mt-4">
         <div className="bg-card border rounded-3xl p-5 cc-shadow grid gap-4 cc-fade-up">
+          {apiError && (
+            <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/40 text-red-600 text-xs font-semibold">
+              {apiError}
+            </div>
+          )}
           {F("Full Name", "name")}
           <div className="grid grid-cols-2 gap-3">
             {F("Age", "age", "number")}
@@ -276,10 +328,10 @@ export function Signup() {
           {F("Mobile Number", "phone")}
           {F("Create Password", "password", "password")}
           {F("Confirm Password", "confirm", "password")}
-          {F("Dessie (Designation / Medical Bio)", "dessie")}
+          {F("Medical Bio / Address", "dessie")}
           {F("Annual Income", "income", "text", ["< ₹3L", "₹3L – ₹6L", "₹6L – ₹12L", "₹12L – ₹25L", "₹25L+"])}
-          <button onClick={submit} className="mt-2 w-full cc-grad-deep text-white font-semibold rounded-2xl py-3.5 active:scale-[0.98] transition-transform">
-            Create account
+          <button onClick={submit} disabled={loading} className="mt-2 w-full cc-grad-deep text-white font-semibold rounded-2xl py-3.5 active:scale-[0.98] transition-transform flex justify-center items-center">
+            {loading ? <span className="animate-pulse">Creating account…</span> : "Create account"}
           </button>
           <button onClick={() => setFlow("login")} className="text-sm text-muted-foreground">
             Already have an account? <span className="text-primary font-semibold">Sign in</span>

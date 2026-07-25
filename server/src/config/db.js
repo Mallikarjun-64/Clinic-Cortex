@@ -25,4 +25,5 @@ export const query = (text, params) => {
   return pool.query(text, params);
 };
 
+export { pool };
 export default pool;

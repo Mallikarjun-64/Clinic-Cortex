@@ -242,3 +242,95 @@ CREATE INDEX idx_notifications_doctor ON notifications(doctor_id);
 CREATE INDEX idx_notifications_read ON notifications(is_read);
 CREATE INDEX idx_messages_thread ON messages(thread_id);
 CREATE INDEX idx_schedule_doctor_day ON schedule_slots(doctor_id, day_of_week);
+
+-- ============================================
+-- 13. PATIENT EXTENSIONS & AUTH COLUMNS
+-- ============================================
+ALTER TABLE patients ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);
+ALTER TABLE patients ADD COLUMN IF NOT EXISTS annual_income NUMERIC(12, 2);
+ALTER TABLE patients ADD COLUMN IF NOT EXISTS preferred_language VARCHAR(50) DEFAULT 'English';
+ALTER TABLE patients ADD COLUMN IF NOT EXISTS profile_photo_url TEXT;
+
+-- ============================================
+-- 14. PHARMACY TABLES
+-- ============================================
+CREATE TABLE IF NOT EXISTS pharmacy_products (
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name            VARCHAR(200) NOT NULL,
+    category        VARCHAR(100) DEFAULT 'General Health',
+    price           DECIMAL(10,2) NOT NULL,
+    rating          DECIMAL(3,2) DEFAULT 4.5,
+    image_url       TEXT,
+    description     TEXT,
+    stock           INTEGER DEFAULT 100,
+    requires_rx     BOOLEAN DEFAULT FALSE,
+    created_at      TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS pharmacy_orders (
+    id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    patient_id        UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+    total_amount      DECIMAL(10,2) NOT NULL,
+    status            VARCHAR(50) DEFAULT 'Processing', -- Processing | Delivered | Cancelled
+    prescription_url  TEXT,
+    delivery_address  TEXT,
+    created_at        TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS pharmacy_order_items (
+    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    order_id    UUID NOT NULL REFERENCES pharmacy_orders(id) ON DELETE CASCADE,
+    product_id  UUID NOT NULL REFERENCES pharmacy_products(id) ON DELETE CASCADE,
+    quantity    INTEGER NOT NULL,
+    price       DECIMAL(10,2) NOT NULL
+);
+
+-- ============================================
+-- 15. SUBSCRIPTION & WALLET TABLES
+-- ============================================
+CREATE TABLE IF NOT EXISTS subscription_plans (
+    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name        VARCHAR(100) NOT NULL,
+    price       DECIMAL(10,2) NOT NULL,
+    period      VARCHAR(50) DEFAULT 'Monthly',
+    features    JSONB DEFAULT '[]',
+    created_at  TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS patient_wallets (
+    id                   UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    patient_id           UUID UNIQUE NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+    balance              DECIMAL(10,2) DEFAULT 0.00,
+    currency             VARCHAR(10) DEFAULT 'INR',
+    subscription_plan_id UUID REFERENCES subscription_plans(id) ON DELETE SET NULL,
+    subscription_status  VARCHAR(50) DEFAULT 'Free',
+    updated_at           TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS wallet_transactions (
+    id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    patient_id    UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+    amount        DECIMAL(10,2) NOT NULL,
+    type          VARCHAR(50) NOT NULL, -- Top-up | Subscription | Pharmacy Purchase | Consultation Fee
+    description   TEXT,
+    reference_id  VARCHAR(100),
+    created_at    TIMESTAMP DEFAULT NOW()
+);
+
+-- ============================================
+-- 16. AI ANALYSIS RESULTS TABLE
+-- ============================================
+CREATE TABLE IF NOT EXISTS ai_analysis_results (
+    id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    patient_id    UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+    vitals_input  JSONB NOT NULL,
+    overall_level VARCHAR(50) NOT NULL, -- Optimal | Attention Needed | High Risk
+    findings      JSONB NOT NULL DEFAULT '[]',
+    summary       TEXT,
+    created_at    TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pharmacy_orders_patient ON pharmacy_orders(patient_id);
+CREATE INDEX IF NOT EXISTS idx_wallet_transactions_patient ON wallet_transactions(patient_id);
+CREATE INDEX IF NOT EXISTS idx_ai_results_patient ON ai_analysis_results(patient_id);
+

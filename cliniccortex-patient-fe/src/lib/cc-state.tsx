@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { api } from "./api";
 
 export type Role = "patient" | "doctor" | "lab";
 export type Lang =
@@ -91,7 +92,10 @@ type Ctx = {
   lang: Lang; setLang: (l: Lang) => void;
   role: Role; setRole: (r: Role) => void;
   t: (k: string) => string;
-  selectedDoctorId: number | null; setSelectedDoctorId: (n: number | null) => void;
+  selectedDoctorId: string | null; setSelectedDoctorId: (n: string | null) => void;
+  user: any | null; setUser: (u: any | null) => void;
+  token: string | null; setToken: (t: string | null) => void;
+  logout: () => void;
 };
 
 const CCContext = createContext<Ctx | null>(null);
@@ -103,7 +107,43 @@ export function CCProvider({ children }: { children: ReactNode }) {
   const [dark, setDark] = useState(false);
   const [lang, setLang] = useState<Lang>("en");
   const [role, setRole] = useState<Role>("patient");
-  const [selectedDoctorId, setSelectedDoctorId] = useState<number | null>(null);
+  const [selectedDoctorId, setSelectedDoctorId] = useState<string | null>(null);
+  const [user, setUser] = useState<any | null>(null);
+  const [token, setTokenState] = useState<string | null>(null);
+
+  // Explicitly guard localStorage -> Context token hydration inside useEffect to avoid SSR/hydration mismatches in TanStack Start
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const savedToken = localStorage.getItem("cliniccortex-patient-token");
+      if (savedToken) {
+        setTokenState(savedToken);
+        api.get("/patient-auth/me")
+          .then((res) => {
+            if (res.success && res.patient) {
+              setUser(res.patient);
+              setFlow("app");
+            }
+          })
+          .catch(() => {
+            api.setToken(null);
+            setTokenState(null);
+            setUser(null);
+          });
+      }
+    }
+  }, []);
+
+  const setToken = (newToken: string | null) => {
+    setTokenState(newToken);
+    api.setToken(newToken);
+  };
+
+  const logout = () => {
+    setToken(null);
+    setUser(null);
+    setFlow("gateway");
+    setScreen("home");
+  };
 
   useEffect(() => {
     if (typeof document !== "undefined") {
@@ -117,6 +157,7 @@ export function CCProvider({ children }: { children: ReactNode }) {
     flow, setFlow, screen, setScreen, drawer, setDrawer,
     dark, setDark, lang, setLang, role, setRole, t,
     selectedDoctorId, setSelectedDoctorId,
+    user, setUser, token, setToken, logout,
   };
 
   return <CCContext.Provider value={value}>{children}</CCContext.Provider>;

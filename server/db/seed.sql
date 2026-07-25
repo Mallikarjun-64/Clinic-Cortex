@@ -88,3 +88,19 @@ INSERT INTO messages (thread_id, sender_type, content) VALUES
 INSERT INTO notifications (doctor_id, title, body, notification_type, category, patient_name, is_read) VALUES
 ('8ee16766-3d23-4c91-91a5-e1ab8529f8f2', 'New Appointment Booked', 'Meghna k Gunaga booked an In-Clinic appointment for Wed, Nov 04 at 10:30 AM', 'info', 'Appointment', 'Meghna k Gunaga', false),
 ('8ee16766-3d23-4c91-91a5-e1ab8529f8f2', 'Emergency SOS Alert', 'James Miller has triggered emergency vitals threshold support requests.', 'danger', 'Urgent', 'James Miller', false);
+
+-- ============================================
+-- 8. SEED PHARMACY PRODUCTS
+-- ============================================
+INSERT INTO pharmacy_products (id, name, category, price, rating, image_url, description, stock, requires_rx) VALUES
+('p1111111-1111-1111-1111-111111111111', 'Paracetamol 650mg', 'Medicines', 35.00, 4.8, 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=300', 'Fast relief from fever and pain', 200, false),
+('p2222222-2222-2222-2222-222222222222', 'Amoxicillin 500mg', 'Medicines', 120.00, 4.6, 'https://images.unsplash.com/photo-1471864190281-a93a3070b6de?w=300', 'Antibiotic for bacterial infections', 150, true),
+('p3333333-3333-3333-3333-333333333333', 'Vitamin C 1000mg Effervescent', 'Wellness', 299.00, 4.9, 'https://images.unsplash.com/photo-1550572017-edd951aa8f72?w=300', 'Immunity booster tablets', 300, false),
+('p4444444-4444-4444-4444-444444444444', 'Digital Blood Pressure Monitor', 'Devices', 1499.00, 4.7, 'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=300', 'Accurate home BP monitoring system', 50, false);
+
+-- ============================================
+-- 9. SEED SUBSCRIPTION PLANS
+-- ============================================
+INSERT INTO subscription_plans (id, name, price, period, features) VALUES
+('s1111111-1111-1111-1111-111111111111', 'Basic Health Care', 499.00, 'Monthly', '["2 Free Tele-Consultations", "10% off Pharmacy", "Basic AI Vitals Analyzer"]'),
+('s2222222-2222-2222-2222-222222222222', 'Family Premium', 999.00, 'Monthly', '["Unlimited Tele-Consultations", "20% off Pharmacy", "Full AI Vitals Analyzer + Priority Support", "Free Home Care Visit"]');

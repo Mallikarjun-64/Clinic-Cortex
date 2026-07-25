@@ -15,6 +15,14 @@ import messageRouter from './routes/message.routes.js';
 import notificationRouter from './routes/notification.routes.js';
 import dashboardRouter from './routes/dashboard.routes.js';
 
+// Import Patient Route Handlers
+import patientAuthRouter from './routes/patientAuth.routes.js';
+import pharmacyRouter from './routes/pharmacy.routes.js';
+import walletRouter from './routes/wallet.routes.js';
+import aiAnalyzerRouter from './routes/aiAnalyzer.routes.js';
+
+import { query } from './config/db.js';
+
 dotenv.config();
 
 const app = express();
@@ -35,7 +43,10 @@ const corsOptions = {
     // Allow requests with no origin (like mobile apps, curl, or postman)
     if (!origin) return callback(null, true);
     
-    if (allowedOrigins.indexOf(origin.toLowerCase()) !== -1 || allowedOrigins.includes('*')) {
+    const lowerOrigin = origin.toLowerCase();
+    const isLocalhost = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(lowerOrigin);
+
+    if (allowedOrigins.includes('*') || allowedOrigins.indexOf(lowerOrigin) !== -1 || isLocalhost) {
       callback(null, true);
     } else {
       console.warn(`Origin blocked by CORS: ${origin}`);
@@ -59,6 +70,28 @@ app.use('/api/schedule', scheduleRouter);
 app.use('/api/messages', messageRouter);
 app.use('/api/notifications', notificationRouter);
 app.use('/api/dashboard', dashboardRouter);
+
+// Patient-facing endpoints
+app.use('/api/patient-auth', patientAuthRouter);
+app.use('/api/pharmacy', pharmacyRouter);
+app.use('/api/wallet', walletRouter);
+app.use('/api/ai-analyzer', aiAnalyzerRouter);
+
+// Public doctors directory endpoint for patient portal
+app.get('/api/doctors-directory', async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT id, salutation, first_name, middle_name, last_name, profile_photo_url,
+              professional_email, mobile, clinic_address, smc_name, pg_specialization,
+              experience_years, clinic_fee, online_fee, consult_languages, bio
+       FROM doctors ORDER BY first_name ASC`
+    );
+    res.status(200).json({ success: true, count: result.rows.length, doctors: result.rows });
+  } catch (err) {
+    console.error('Fetch Public Doctors Error:', err);
+    res.status(500).json({ success: false, message: 'Server error listing doctors' });
+  }
+});
 
 // Healthcheck endpoint
 app.get('/health', (req, res) => {

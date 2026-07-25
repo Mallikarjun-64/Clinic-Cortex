@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Calendar, Clock, Star, MapPin, Video, Phone, Send, Paperclip,
   Heart, Activity, Droplet, Moon, Thermometer, Wind, ChevronRight,
@@ -8,6 +8,7 @@ import {
   Siren, MapPinned, CheckCircle2, XCircle, RotateCcw, Bot,
 } from "lucide-react";
 import { useCC, LANGUAGES, type Screen } from "@/lib/cc-state";
+import { api } from "@/lib/api";
 
 /* ---------------- Helpers ---------------- */
 function Section({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
@@ -122,9 +123,9 @@ function MiniVital({ icon: Icon, label, value, unit, tone }: { icon: any; label:
 
 /* ---------------- Appointments ---------------- */
 const DOCTORS = [
-  { id: 1, name: "Dr. Ronaldo Richard", spec: "General Medicine", rating: 4.5, exp: "7+", patients: "5.8K+", reviews: "2.5K+", langs: ["English", "Hindi", "Marathi"] },
-  { id: 2, name: "Dr. Asha Verma", spec: "Cardiology", rating: 4.8, exp: "12+", patients: "8.1K+", reviews: "3.2K+", langs: ["English", "Hindi"] },
-  { id: 3, name: "Dr. Kiran Iyer", spec: "Pediatrics", rating: 4.6, exp: "9+", patients: "6.4K+", reviews: "2.1K+", langs: ["English", "Tamil"] },
+  { id: "8ee16766-3d23-4c91-91a5-e1ab8529f8f2", name: "Dr. Sarah Johnson", spec: "Cardiology", rating: 4.9, exp: "12+", patients: "8.1K+", reviews: "3.2K+", langs: ["English", "Hindi"] },
+  { id: "d2222222-2222-2222-2222-222222222222", name: "Dr. Ronaldo Richard", spec: "General Medicine", rating: 4.5, exp: "7+", patients: "5.8K+", reviews: "2.5K+", langs: ["English", "Hindi", "Marathi"] },
+  { id: "d3333333-3333-3333-3333-333333333333", name: "Dr. Kiran Iyer", spec: "Pediatrics", rating: 4.6, exp: "9+", patients: "6.4K+", reviews: "2.1K+", langs: ["English", "Tamil"] },
 ];
 
 export function AppointmentsScreen() {
@@ -251,12 +252,39 @@ export function AppointmentsScreen() {
 
 export function DoctorDetail() {
   const { selectedDoctorId, setScreen } = useCC();
-  const d = DOCTORS.find((x) => x.id === selectedDoctorId) ?? DOCTORS[0];
+  const [doctorsList, setDoctorsList] = useState<any[]>(DOCTORS);
+
+  useEffect(() => {
+    async function loadDoctors() {
+      try {
+        const res = await api.get('/doctors-directory');
+        if (res.success && Array.isArray(res.doctors) && res.doctors.length > 0) {
+          const mapped = res.doctors.map((d: any) => ({
+            id: d.id,
+            name: `${d.salutation || 'Dr.'} ${d.first_name} ${d.last_name}`.trim(),
+            spec: d.pg_specialization || 'General Medicine',
+            rating: 4.8,
+            exp: `${d.experience_years || 5}+`,
+            patients: '3.5K+',
+            reviews: '1.2K+',
+            langs: d.consult_languages || ["English", "Hindi"],
+            fee: d.clinic_fee || 1000
+          }));
+          setDoctorsList(mapped);
+        }
+      } catch (err) {
+        console.warn("Could not fetch doctors directory", err);
+      }
+    }
+    loadDoctors();
+  }, []);
+
+  const d = doctorsList.find((x) => x.id === selectedDoctorId) ?? doctorsList[0];
   return (
     <div>
       <div className="cc-grad-deep px-5 pt-6 pb-10 rounded-b-[2.5rem] text-white">
         <div className="flex items-center gap-4">
-          <div className="w-20 h-20 rounded-3xl bg-white/15 backdrop-blur flex items-center justify-center text-3xl font-bold">{d.name.split(" ")[1][0]}</div>
+          <div className="w-20 h-20 rounded-3xl bg-white/15 backdrop-blur flex items-center justify-center text-3xl font-bold">{d.name.split(" ")[1] ? d.name.split(" ")[1][0] : 'D'}</div>
           <div>
             <div className="text-xl font-bold">{d.name}</div>
             <div className="text-cyan-100 text-sm">{d.spec}</div>
@@ -282,14 +310,14 @@ export function DoctorDetail() {
       </div>
       <Section title="Languages">
         <div className="flex flex-wrap gap-2">
-          {d.langs.map((l) => <span key={l} className="px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium">{l}</span>)}
+          {d.langs.map((l: string) => <span key={l} className="px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium">{l}</span>)}
         </div>
       </Section>
       <Section title="Consultation fee">
         {[
-          { l: "Clinic Appointment", v: "₹1000" },
-          { l: "Tele-appointment", v: "₹1000" },
-          { l: "Home-appointment", v: "₹1000" },
+          { l: "Clinic Appointment", v: `₹${d.fee || 1000}` },
+          { l: "Tele-appointment", v: `₹${d.fee || 800}` },
+          { l: "Home-appointment", v: `₹${(d.fee || 1000) + 500}` },
         ].map((f) => (
           <div key={f.l} className="bg-card border rounded-2xl p-3 flex items-center justify-between mb-2">
             <span className="text-sm">{f.l}</span>
@@ -307,15 +335,39 @@ export function DoctorDetail() {
 }
 
 export function BookingScreen() {
-  const { setScreen } = useCC();
+  const { selectedDoctorId, setScreen, user } = useCC();
   const [day, setDay] = useState(4);
   const [slot, setSlot] = useState("10:30 AM");
+  const [loading, setLoading] = useState(false);
+
   const days = Array.from({ length: 14 }, (_, i) => i + 1);
   const slots = {
     Morning: ["08:00 AM", "09:00 AM", "10:30 AM", "11:00 AM"],
     Afternoon: ["12:00 PM", "01:30 PM", "02:00 PM"],
     Evening: ["05:00 PM", "06:30 PM", "07:00 PM"],
   };
+
+  const handleConfirmBooking = async () => {
+    setLoading(true);
+    try {
+      await api.post('/appointments', {
+        doctorId: selectedDoctorId || "8ee16766-3d23-4c91-91a5-e1ab8529f8f2",
+        patientName: user?.name || "Patient",
+        visitType: "Clinic",
+        date: `2026-11-${String(day).padStart(2, '0')}`,
+        time: slot === "10:30 AM" ? "10:30:00" : "12:00:00",
+        condition: "General Consult",
+        notes: "Booked via Patient Portal app"
+      });
+      alert("Appointment booked successfully!");
+      setScreen("appointments");
+    } catch (err: any) {
+      alert(err.message || "Failed to book appointment");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="pb-8">
       <div className="px-5 pt-4">
@@ -349,8 +401,8 @@ export function BookingScreen() {
         </Section>
       ))}
       <div className="px-5 mt-8">
-        <button onClick={() => setScreen("appointments")} className="w-full cc-grad-deep text-white font-semibold rounded-2xl py-3.5">
-          Confirm booking · ₹1000
+        <button onClick={handleConfirmBooking} disabled={loading} className="w-full cc-grad-deep text-white font-semibold rounded-2xl py-3.5 flex justify-center items-center">
+          {loading ? <span className="animate-pulse">Booking…</span> : "Confirm booking · ₹1000"}
         </button>
       </div>
     </div>
@@ -571,23 +623,56 @@ export function SearchScreen() {
 }
 
 /* ---------------- Pharmacy ---------------- */
-const MEDS = [
-  { id: 1, name: "Paracetamol 500mg", type: "OTC", price: 45, dose: "1 tab every 6h" },
-  { id: 2, name: "Vitamin D3 60K", type: "Rx", price: 120, dose: "Once a week" },
-  { id: 3, name: "Metformin 500mg", type: "Rx", price: 75, dose: "Twice daily" },
-  { id: 4, name: "Cetirizine 10mg", type: "OTC", price: 30, dose: "Once at night" },
-];
-
 export function PharmacyScreen() {
-  const [cart, setCart] = useState<Record<number, number>>({});
-  const add = (id: number) => setCart((c) => ({ ...c, [id]: (c[id] ?? 0) + 1 }));
-  const sub = (id: number) => setCart((c) => {
+  const [products, setProducts] = useState<any[]>([]);
+  const [cart, setCart] = useState<Record<string, number>>({});
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    async function loadProducts() {
+      try {
+        const res = await api.get('/pharmacy/products');
+        if (res.success && Array.isArray(res.products)) {
+          setProducts(res.products);
+        }
+      } catch (err) {
+        console.warn("Failed to load pharmacy products", err);
+      }
+    }
+    loadProducts();
+  }, []);
+
+  const add = (id: string) => setCart((c) => ({ ...c, [id]: (c[id] ?? 0) + 1 }));
+  const sub = (id: string) => setCart((c) => {
     const n = (c[id] ?? 0) - 1;
     const cp = { ...c };
     if (n <= 0) delete cp[id]; else cp[id] = n;
     return cp;
   });
-  const total = useMemo(() => Object.entries(cart).reduce((s, [id, qty]) => s + (MEDS.find((m) => m.id === +id)?.price ?? 0) * qty, 0), [cart]);
+
+  const total = useMemo(() => Object.entries(cart).reduce((s, [id, qty]) => {
+    const item = products.find((m) => m.id === id);
+    return s + (item ? parseFloat(item.price) : 0) * qty;
+  }, 0), [cart, products]);
+
+  const handleCheckout = async () => {
+    const items = Object.entries(cart).map(([productId, quantity]) => ({ productId, quantity }));
+    if (items.length === 0) return;
+    setLoading(true);
+    try {
+      await api.post('/pharmacy/orders', {
+        items,
+        deliveryAddress: "123 Main Street, New Delhi",
+        prescriptionUrl: "https://cliniccortex.app/prescriptions/sample.pdf"
+      });
+      alert("Pharmacy order placed successfully!");
+      setCart({});
+    } catch (err: any) {
+      alert(err.message || "Checkout failed");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div>
@@ -613,12 +698,12 @@ export function PharmacyScreen() {
       </Section>
       <Section title="Featured medicines">
         <div className="grid gap-3">
-          {MEDS.map((m) => (
+          {products.map((m) => (
             <div key={m.id} className="bg-card border rounded-3xl p-4 flex items-center gap-3">
               <div className="w-12 h-12 rounded-2xl bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 flex items-center justify-center"><Pill className="w-6 h-6" /></div>
               <div className="flex-1">
                 <div className="font-semibold text-sm">{m.name}</div>
-                <div className="text-xs text-muted-foreground">{m.type} • {m.dose}</div>
+                <div className="text-xs text-muted-foreground">{m.category || 'Medicine'} • {m.requires_rx ? 'Rx Required' : 'OTC'}</div>
                 <div className="text-sm font-bold text-primary mt-1">₹{m.price}</div>
               </div>
               {cart[m.id] ? (
@@ -638,9 +723,11 @@ export function PharmacyScreen() {
         <div className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 max-w-[440px] w-[92%] cc-grad-deep text-white rounded-2xl px-5 py-3 flex items-center justify-between cc-shadow cc-pop">
           <div>
             <div className="text-[10px] uppercase tracking-wide text-cyan-100">Cart total</div>
-            <div className="text-lg font-bold">₹{total}</div>
+            <div className="text-lg font-bold">₹{total.toFixed(2)}</div>
           </div>
-          <button className="bg-white text-primary px-4 py-2 rounded-xl font-semibold text-sm">Checkout</button>
+          <button onClick={handleCheckout} disabled={loading} className="bg-white text-primary px-4 py-2 rounded-xl font-semibold text-sm">
+            {loading ? 'Processing…' : 'Checkout'}
+          </button>
         </div>
       )}
     </div>
@@ -649,6 +736,51 @@ export function PharmacyScreen() {
 
 /* ---------------- Wallet ---------------- */
 export function WalletScreen() {
+  const [wallet, setWallet] = useState<any>({ balance: 0.00, subscription_status: 'Free' });
+  const [plans, setPlans] = useState<any[]>([]);
+
+  async function fetchWallet() {
+    try {
+      const res = await api.get('/wallet');
+      if (res.success && res.wallet) setWallet(res.wallet);
+
+      const plansRes = await api.get('/wallet/plans');
+      if (plansRes.success && Array.isArray(plansRes.plans)) setPlans(plansRes.plans);
+    } catch (err) {
+      console.warn("Error fetching wallet details", err);
+    }
+  }
+
+  useEffect(() => {
+    fetchWallet();
+  }, []);
+
+  const handleTopUp = async () => {
+    const amt = prompt("Enter amount to add to wallet (₹):", "500");
+    if (!amt) return;
+    try {
+      const res = await api.post('/wallet/topup', { amount: parseFloat(amt) });
+      if (res.success) {
+        alert(res.message);
+        fetchWallet();
+      }
+    } catch (err: any) {
+      alert(err.message || "Top-up failed");
+    }
+  };
+
+  const handleSubscribe = async (planId: string) => {
+    try {
+      const res = await api.post('/wallet/subscribe', { planId });
+      if (res.success) {
+        alert(res.message);
+        fetchWallet();
+      }
+    } catch (err: any) {
+      alert(err.message || "Subscription failed");
+    }
+  };
+
   return (
     <div>
       <div className="px-5 pt-4">
@@ -659,21 +791,25 @@ export function WalletScreen() {
           <div className="absolute -right-8 -top-8 w-40 h-40 rounded-full bg-white/10 blur-2xl" />
           <div className="relative">
             <div className="text-xs uppercase tracking-[0.3em] text-cyan-200">Available Balance</div>
-            <div className="text-3xl font-bold mt-2">₹ 12,450.00</div>
-            <div className="text-xs text-cyan-100 mt-1">+ 1,200 CC Points</div>
+            <div className="text-3xl font-bold mt-2">₹ {parseFloat(wallet.balance || 0).toFixed(2)}</div>
+            <div className="text-xs text-cyan-100 mt-1">Status: {wallet.subscription_status || 'Free'}</div>
             <div className="mt-5 flex gap-3">
-              <button className="bg-white text-primary px-4 py-2 rounded-xl text-sm font-semibold">Add money</button>
-              <button className="border border-white/40 text-white px-4 py-2 rounded-xl text-sm font-medium">Withdraw</button>
+              <button onClick={handleTopUp} className="bg-white text-primary px-4 py-2 rounded-xl text-sm font-semibold">Add money</button>
             </div>
           </div>
         </div>
       </div>
-      <Section title="Subscription">
-        <div className="grid grid-cols-3 gap-2">
-          {["Basic", "Plus", "Pro"].map((t, i) => (
-            <div key={t} className={`rounded-2xl p-4 text-center ${i === 1 ? "cc-grad-deep text-white" : "bg-card border"}`}>
-              <div className="font-bold">{t}</div>
-              <div className={`text-xs mt-1 ${i === 1 ? "text-cyan-100" : "text-muted-foreground"}`}>₹{[0, 299, 799][i]}/mo</div>
+      <Section title="Subscription Plans">
+        <div className="grid grid-cols-2 gap-3">
+          {plans.map((p) => (
+            <div key={p.id} className="bg-card border rounded-2xl p-4 flex flex-col justify-between">
+              <div>
+                <div className="font-bold">{p.name}</div>
+                <div className="text-sm font-semibold text-primary mt-1">₹{p.price}/{p.period || 'Mo'}</div>
+              </div>
+              <button onClick={() => handleSubscribe(p.id)} className="mt-3 w-full cc-grad-deep text-white text-xs font-semibold py-2 rounded-xl">
+                Subscribe
+              </button>
             </div>
           ))}
         </div>
@@ -684,32 +820,49 @@ export function WalletScreen() {
 
 /* ---------------- Transactions ---------------- */
 export function TransactionsScreen() {
-  const tx = [
-    { id: 1, label: "Dr. Ronaldo · Consultation", amt: -1000, date: "Nov 02" },
-    { id: 2, label: "Wallet top-up", amt: 5000, date: "Oct 28" },
-    { id: 3, label: "Pharmacy order #28732", amt: -450, date: "Oct 22" },
-    { id: 4, label: "CC Points reward", amt: 250, date: "Oct 18" },
-  ];
+  const [tx, setTx] = useState<any[]>([]);
+
+  useEffect(() => {
+    async function loadTx() {
+      try {
+        const res = await api.get('/wallet/transactions');
+        if (res.success && Array.isArray(res.transactions)) {
+          setTx(res.transactions);
+        }
+      } catch (err) {
+        console.warn("Failed to load transactions", err);
+      }
+    }
+    loadTx();
+  }, []);
+
   return (
     <div>
       <div className="px-5 pt-4">
         <h1 className="text-2xl font-bold">CC Transactions</h1>
       </div>
       <div className="px-5 mt-5 grid gap-2">
-        {tx.map((t) => (
-          <div key={t.id} className="bg-card border rounded-2xl p-3 flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${t.amt > 0 ? "bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600" : "bg-red-100 dark:bg-red-950/40 text-red-500"}`}>
-              {t.amt > 0 ? <ArrowDownLeft className="w-5 h-5" /> : <ArrowUpRight className="w-5 h-5" />}
-            </div>
-            <div className="flex-1">
-              <div className="text-sm font-semibold">{t.label}</div>
-              <div className="text-[11px] text-muted-foreground">{t.date}</div>
-            </div>
-            <div className={`text-sm font-bold ${t.amt > 0 ? "text-emerald-600" : "text-red-500"}`}>
-              {t.amt > 0 ? "+" : ""}₹{Math.abs(t.amt)}
-            </div>
-          </div>
-        ))}
+        {tx.length === 0 ? (
+          <div className="text-center text-sm text-muted-foreground py-8">No transactions yet</div>
+        ) : (
+          tx.map((t) => {
+            const isPos = parseFloat(t.amount) > 0 && t.type === 'Top-up';
+            return (
+              <div key={t.id} className="bg-card border rounded-2xl p-3 flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isPos ? "bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600" : "bg-red-100 dark:bg-red-950/40 text-red-500"}`}>
+                  {isPos ? <ArrowDownLeft className="w-5 h-5" /> : <ArrowUpRight className="w-5 h-5" />}
+                </div>
+                <div className="flex-1">
+                  <div className="text-sm font-semibold">{t.description || t.type}</div>
+                  <div className="text-[11px] text-muted-foreground">{new Date(t.created_at).toLocaleDateString()}</div>
+                </div>
+                <div className={`text-sm font-bold ${isPos ? "text-emerald-600" : "text-red-500"}`}>
+                  {isPos ? "+" : "-"}₹{parseFloat(t.amount).toFixed(2)}
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
     </div>
   );
@@ -717,31 +870,64 @@ export function TransactionsScreen() {
 
 /* ---------------- AI Analyzer ---------------- */
 export function AIAnalyzerScreen() {
+  const [result, setResult] = useState<any>(null);
+
+  useEffect(() => {
+    async function runAnalysis() {
+      try {
+        const res = await api.post('/ai-analyzer/analyze', {
+          vitals: {
+            blood_glucose: 110,
+            spo2: 98,
+            rhr: 65,
+            hrv: 75,
+            temp: 98.4,
+            sleep: 7.5
+          }
+        });
+        if (res.success && res.result) {
+          setResult(res.result);
+        }
+      } catch (err) {
+        console.warn("AI Analysis error", err);
+      }
+    }
+    runAnalysis();
+  }, []);
+
+  const findings = result?.findings ? (typeof result.findings === 'string' ? JSON.parse(result.findings) : result.findings) : [];
+
   return (
     <div>
       <div className="px-5 pt-4">
         <h1 className="text-2xl font-bold">AI Analyzer</h1>
-        <p className="text-sm text-muted-foreground">Smart insights from your records</p>
+        <p className="text-sm text-muted-foreground">Smart insights from your health records</p>
       </div>
       <div className="px-5 mt-5">
         <div className="cc-grad rounded-3xl p-5 text-white flex items-center gap-4 cc-shadow">
           <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur flex items-center justify-center"><Bot className="w-7 h-7" /></div>
           <div className="flex-1">
-            <div className="font-bold">Risk score</div>
-            <div className="text-2xl font-bold">Low</div>
+            <div className="font-bold">Risk Status</div>
+            <div className="text-2xl font-bold">{result?.overall_level || "Optimal"}</div>
           </div>
-          <div className="text-3xl font-bold">82</div>
+          <div className="text-3xl font-bold">94</div>
         </div>
       </div>
-      <Section title="Insights">
-        {[
-          { t: "Sleep deficit detected", d: "Average 4h 50m last 7 days — aim for 7h+." },
-          { t: "Resting HR trending low", d: "Consider light cardio and hydration tracking." },
-          { t: "Glucose stable", d: "Within ideal range throughout the week." },
-        ].map((x) => (
-          <div key={x.t} className="bg-card border rounded-2xl p-4 mb-2">
-            <div className="font-semibold text-sm">{x.t}</div>
-            <div className="text-xs text-muted-foreground mt-1">{x.d}</div>
+      <Section title="Vitals Evaluation Summary">
+        <div className="bg-card border rounded-2xl p-4 mb-3 text-xs text-muted-foreground leading-relaxed">
+          {result?.summary || "Vitals within normal range."}
+        </div>
+      </Section>
+      <Section title="Detailed Findings">
+        {findings.map((x: any, i: number) => (
+          <div key={i} className="bg-card border rounded-2xl p-4 mb-2">
+            <div className="flex justify-between items-center">
+              <div className="font-semibold text-sm">{x.vital}</div>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${x.status === 'Normal' || x.status === 'Optimal' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                {x.status}
+              </span>
+            </div>
+            <div className="text-xs text-muted-foreground mt-1">{x.message}</div>
           </div>
         ))}
       </Section>

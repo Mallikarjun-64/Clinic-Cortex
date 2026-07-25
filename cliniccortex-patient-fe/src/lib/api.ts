@@ -31,7 +31,19 @@ export const api = {
   post: (endpoint: string, body?: any, options?: RequestInit) => request(endpoint, { ...options, method: 'POST', body: JSON.stringify(body) }),
   put: (endpoint: string, body?: any, options?: RequestInit) => request(endpoint, { ...options, method: 'PUT', body: JSON.stringify(body) }),
   patch: (endpoint: string, body?: any, options?: RequestInit) => request(endpoint, { ...options, method: 'PATCH', body: JSON.stringify(body) }),
-  delete: (endpoint: string, options?: RequestInit) => request(endpoint, { ...options, method: 'DELETE' })
+  delete: (endpoint: string, options?: RequestInit) => request(endpoint, { ...options, method: 'DELETE' }),
+  setToken: (token: string | null) => {
+    if (typeof window !== "undefined") {
+      if (token) {
+        localStorage.setItem('cliniccortex-patient-token', token);
+      } else {
+        localStorage.removeItem('cliniccortex-patient-token');
+      }
+    }
+  },
+  getToken: () => {
+    return typeof window !== "undefined" ? localStorage.getItem('cliniccortex-patient-token') : null;
+  }
 };
 
 export default api;
