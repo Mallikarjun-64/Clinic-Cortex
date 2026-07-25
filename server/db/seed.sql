@@ -9,19 +9,36 @@ INSERT INTO doctors (
     profile_photo_url, professional_email, mobile, clinic_address, nmc_reg_no, 
     smc_name, pg_specialization, experience_years, employment_types, clinic_fee, 
     online_fee, password_hash, consent_dpdp, consent_telemedicine, consent_tnc
-) VALUES (
+) VALUES 
+(
     '8ee16766-3d23-4c91-91a5-e1ab8529f8f2', 'Dr.', 'Sarah', '', 'Johnson', '1984-06-15', 'Female', 'Indian',
     'https://images.unsplash.com/photo-1559839734-2b71ea197ec2?auto=format&fit=crop&q=80&w=300', 
     'sarah.johnson@clinic.com', '+91 98765 43210', 'Apex Cardiac Care, Sector 15, New Delhi', 'NMC-12345', 
     'Delhi Medical Council', 'Cardiology', 12, ARRAY['Permanent', 'Consultant'], 1000.00, 
     800.00, '$2a$12$R9h/lIPzNgbpcG4dy5wUTuQqT12vW3.EswU1R0sH74fXlXgE.1J6i', true, true, true
-) ON CONFLICT (professional_email) DO NOTHING;
+),
+(
+    'd2222222-2222-2222-2222-222222222222', 'Dr.', 'Ronaldo', '', 'Richard', '1988-11-20', 'Male', 'Indian',
+    'https://images.unsplash.com/photo-1622253692010-333f2da6031d?auto=format&fit=crop&q=80&w=300', 
+    'ronaldo.richard@clinic.com', '+91 98765 43211', 'City General Hospital, Mumbai', 'NMC-67890', 
+    'Maharashtra Medical Council', 'General Medicine', 7, ARRAY['Permanent'], 800.00, 
+    600.00, '$2a$12$R9h/lIPzNgbpcG4dy5wUTuQqT12vW3.EswU1R0sH74fXlXgE.1J6i', true, true, true
+),
+(
+    'd3333333-3333-3333-3333-333333333333', 'Dr.', 'Kiran', '', 'Iyer', '1986-04-10', 'Female', 'Indian',
+    'https://images.unsplash.com/photo-1594824813566-788534778b7c?auto=format&fit=crop&q=80&w=300', 
+    'kiran.iyer@clinic.com', '+91 98765 43212', 'Sunshine Children Care, Chennai', 'NMC-54321', 
+    'Tamil Nadu Medical Council', 'Pediatrics', 9, ARRAY['Consultant'], 900.00, 
+    700.00, '$2a$12$R9h/lIPzNgbpcG4dy5wUTuQqT12vW3.EswU1R0sH74fXlXgE.1J6i', true, true, true
+)
+ON CONFLICT (professional_email) DO NOTHING;
 
 -- Seed Doctor Specialty details
-INSERT INTO doctor_specialties (doctor_id, specialty_type, specialty_data) VALUES (
-    '8ee16766-3d23-4c91-91a5-e1ab8529f8f2', 'Cardiology', 
-    '{"subType": "Interventional Cardiology", "focus": "Adult", "cathLabExp": "8 years", "deviceExp": ["Pacemaker", "ICD"]}'
-);
+INSERT INTO doctor_specialties (doctor_id, specialty_type, specialty_data) VALUES 
+('8ee16766-3d23-4c91-91a5-e1ab8529f8f2', 'Cardiology', '{"subType": "Interventional Cardiology", "focus": "Adult", "cathLabExp": "8 years"}'),
+('d2222222-2222-2222-2222-222222222222', 'General Medicine', '{"subType": "Internal Medicine", "focus": "General"}'),
+('d3333333-3333-3333-3333-333333333333', 'Pediatrics', '{"subType": "Pediatric Health", "focus": "Children"}')
+ON CONFLICT DO NOTHING;
 
 -- ============================================
 -- 2. SEED PATIENTS

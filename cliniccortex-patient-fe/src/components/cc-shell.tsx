@@ -36,7 +36,7 @@ const DRAWER: { id: Screen; label: string; icon: React.ElementType; danger?: boo
 ];
 
 export function AppShell() {
-  const { screen, setScreen, drawer, setDrawer, setFlow, t } = useCC();
+  const { screen, setScreen, drawer, setDrawer, setFlow, t, user } = useCC();
   const [notif] = useState(3);
 
   const render = (): ReactNode => {
@@ -98,7 +98,7 @@ export function AppShell() {
                 <MapPin className="w-3.5 h-3.5" /> Mumbai
               </div>
               <div className="flex-1">
-                <div className="text-sm font-semibold leading-none">{t("hello")} User!</div>
+                <div className="text-sm font-semibold leading-none">{t("hello")} {user?.name?.split(" ")[0] || "there"}!</div>
                 <div className="text-[11px] text-muted-foreground mt-0.5">Stay on top of your health</div>
               </div>
               <button className="relative p-2 rounded-xl hover:bg-muted">
@@ -110,7 +110,9 @@ export function AppShell() {
               <button onClick={() => setScreen("chat")} className="p-2 rounded-xl hover:bg-muted">
                 <MessageCircle className="w-5 h-5" />
               </button>
-              <button onClick={() => setScreen("profile")} className="w-9 h-9 rounded-full cc-grad-deep text-white flex items-center justify-center text-sm font-semibold cc-shadow">U</button>
+              <button onClick={() => setScreen("profile")} className="w-9 h-9 rounded-full cc-grad-deep text-white flex items-center justify-center text-sm font-semibold cc-shadow">
+                {user?.name?.[0]?.toUpperCase() || "U"}
+              </button>
             </div>
           </header>
 
@@ -165,7 +167,7 @@ function DrawerContent({
   onPick,
   onClose,
 }: { inline?: boolean; onPick?: (id: Screen | "logout") => void; onClose?: () => void }) {
-  const { screen, setScreen, setFlow } = useCC();
+  const { screen, setScreen, setFlow, user, logout } = useCC();
   return (
     <div className="flex-1 flex flex-col h-full">
       <div className="cc-grad-deep p-5 text-white relative">
@@ -175,10 +177,12 @@ function DrawerContent({
           </button>
         )}
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-white/15 backdrop-blur flex items-center justify-center font-bold">U</div>
+          <div className="w-12 h-12 rounded-2xl bg-white/15 backdrop-blur flex items-center justify-center font-bold">
+            {user?.name?.[0]?.toUpperCase() || "U"}
+          </div>
           <div>
-            <div className="font-semibold">Hello User</div>
-            <div className="text-xs text-cyan-100">user1324@gmail.com</div>
+            <div className="font-semibold">{user?.name || "Guest"}</div>
+            <div className="text-xs text-cyan-100">{user?.email || user?.phone || ""}</div>
           </div>
         </div>
       </div>
@@ -201,7 +205,7 @@ function DrawerContent({
           );
         })}
         <button
-          onClick={() => (inline ? setFlow("gateway") : onPick?.("logout"))}
+          onClick={() => { logout(); if (inline) setFlow("gateway"); else onPick?.("logout"); }}
           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40"
         >
           <LogOut className="w-5 h-5" />

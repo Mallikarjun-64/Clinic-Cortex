@@ -122,15 +122,30 @@ function MiniVital({ icon: Icon, label, value, unit, tone }: { icon: any; label:
 }
 
 /* ---------------- Appointments ---------------- */
-const DOCTORS = [
-  { id: "8ee16766-3d23-4c91-91a5-e1ab8529f8f2", name: "Dr. Sarah Johnson", spec: "Cardiology", rating: 4.9, exp: "12+", patients: "8.1K+", reviews: "3.2K+", langs: ["English", "Hindi"] },
-  { id: "d2222222-2222-2222-2222-222222222222", name: "Dr. Ronaldo Richard", spec: "General Medicine", rating: 4.5, exp: "7+", patients: "5.8K+", reviews: "2.5K+", langs: ["English", "Hindi", "Marathi"] },
-  { id: "d3333333-3333-3333-3333-333333333333", name: "Dr. Kiran Iyer", spec: "Pediatrics", rating: 4.6, exp: "9+", patients: "6.4K+", reviews: "2.1K+", langs: ["English", "Tamil"] },
-];
-
 export function AppointmentsScreen() {
   const { setScreen, setSelectedDoctorId } = useCC();
   const [tab, setTab] = useState<"upcoming" | "book" | "missed" | "completed">("upcoming");
+  const [topDoctors, setTopDoctors] = useState<any[]>([]);
+
+  useEffect(() => {
+    api.get('/doctors-directory').then((res) => {
+      const list = res.doctors || [];
+      if (Array.isArray(list)) {
+        setTopDoctors(list.map((d: any) => ({
+          id: d.id,
+          name: `${d.salutation || 'Dr.'} ${d.first_name} ${d.last_name}`.trim(),
+          spec: d.pg_specialization || 'General Medicine',
+          rating: 4.8,
+          exp: `${d.experience_years || 5}+`,
+          patients: '3.5K+',
+          reviews: '1.2K+',
+          langs: d.consult_languages || ["English", "Hindi"],
+          fee: d.clinic_fee || 1000
+        })));
+      }
+    }).catch(() => {});
+  }, []);
+
   return (
     <div>
       <div className="px-5 pt-4">
@@ -194,14 +209,16 @@ export function AppointmentsScreen() {
               })}
             </div>
             <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground mt-3">Top doctors</h3>
-            {DOCTORS.map((d) => (
+            {topDoctors.map((d) => (
               <button
                 key={d.id}
                 onClick={() => { setSelectedDoctorId(d.id); setScreen("doctor-detail"); }}
                 className="bg-card border rounded-3xl p-4 text-left active:scale-[0.98] transition-transform"
               >
                 <div className="flex items-start gap-3">
-                  <div className="w-14 h-14 rounded-2xl cc-grad-deep text-white flex items-center justify-center font-bold text-lg">{d.name.split(" ")[1][0]}</div>
+                  <div className="w-14 h-14 rounded-2xl cc-grad-deep text-white flex items-center justify-center font-bold text-lg">
+                    {d.name.split(" ")[1] ? d.name.split(" ")[1][0] : 'D'}
+                  </div>
                   <div className="flex-1">
                     <div className="font-semibold">{d.name}</div>
                     <div className="text-xs text-muted-foreground">{d.spec}</div>
@@ -252,7 +269,7 @@ export function AppointmentsScreen() {
 
 export function DoctorDetail() {
   const { selectedDoctorId, setScreen } = useCC();
-  const [doctorsList, setDoctorsList] = useState<any[]>(DOCTORS);
+  const [doctorsList, setDoctorsList] = useState<any[]>([]);
 
   useEffect(() => {
     async function loadDoctors() {
@@ -279,7 +296,9 @@ export function DoctorDetail() {
     loadDoctors();
   }, []);
 
-  const d = doctorsList.find((x) => x.id === selectedDoctorId) ?? doctorsList[0];
+  const d = doctorsList.find((x) => x.id === selectedDoctorId) ?? doctorsList[0] ?? {
+    name: "Doctor Specialist", spec: "General Medicine", rating: 4.8, exp: "5+", patients: "1K+", reviews: "500+", langs: ["English"], fee: 1000
+  };
   return (
     <div>
       <div className="cc-grad-deep px-5 pt-6 pb-10 rounded-b-[2.5rem] text-white">
@@ -588,7 +607,35 @@ export function VitalsScreen() {
 
 /* ---------------- Search ---------------- */
 export function SearchScreen() {
+  const { setSelectedDoctorId, setScreen } = useCC();
   const [q, setQ] = useState("");
+  const [doctorsList, setDoctorsList] = useState<any[]>([]);
+
+  useEffect(() => {
+    async function loadDoctors() {
+      try {
+        const res = await api.get('/doctors-directory');
+        if (res.success && Array.isArray(res.doctors)) {
+          const mapped = res.doctors.map((d: any) => ({
+            id: d.id,
+            name: `${d.salutation || 'Dr.'} ${d.first_name} ${d.last_name}`.trim(),
+            spec: d.pg_specialization || 'General Medicine',
+            rating: 4.8,
+            exp: `${d.experience_years || 5}+`,
+            patients: '3.5K+',
+            reviews: '1.2K+',
+            langs: d.consult_languages || ["English", "Hindi"],
+            fee: d.clinic_fee || 1000
+          }));
+          setDoctorsList(mapped);
+        }
+      } catch (err) {
+        console.warn("Could not fetch doctors directory", err);
+      }
+    }
+    loadDoctors();
+  }, []);
+
   return (
     <div>
       <div className="px-5 pt-4">
@@ -601,21 +648,27 @@ export function SearchScreen() {
       <Section title="Trending">
         <div className="flex flex-wrap gap-2">
           {["Cardiologist", "Diabetes", "Vitamin D", "Skin care", "Paediatric"].map((t) => (
-            <button key={t} className="px-3 py-1.5 rounded-full bg-card border text-xs font-medium hover:border-primary/40">{t}</button>
+            <button key={t} onClick={() => setQ(t)} className="px-3 py-1.5 rounded-full bg-card border text-xs font-medium hover:border-primary/40">{t}</button>
           ))}
         </div>
       </Section>
       <Section title="Results">
-        {DOCTORS.filter((d) => !q || d.name.toLowerCase().includes(q.toLowerCase()) || d.spec.toLowerCase().includes(q.toLowerCase())).map((d) => (
-          <div key={d.id} className="bg-card border rounded-3xl p-4 mb-3 flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl cc-grad-deep text-white flex items-center justify-center font-bold">{d.name.split(" ")[1][0]}</div>
+        {doctorsList.filter((d) => !q || d.name.toLowerCase().includes(q.toLowerCase()) || d.spec.toLowerCase().includes(q.toLowerCase())).map((d) => (
+          <button
+            key={d.id}
+            onClick={() => { setSelectedDoctorId(d.id); setScreen("doctor-detail"); }}
+            className="w-full bg-card border rounded-3xl p-4 mb-3 flex items-center gap-3 text-left hover:border-primary/40 transition-colors"
+          >
+            <div className="w-12 h-12 rounded-2xl cc-grad-deep text-white flex items-center justify-center font-bold">
+              {d.name.split(" ")[1] ? d.name.split(" ")[1][0] : 'D'}
+            </div>
             <div className="flex-1">
               <div className="font-semibold text-sm">{d.name}</div>
               <div className="text-xs text-muted-foreground">{d.spec}</div>
             </div>
             <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
             <span className="text-xs font-semibold">{d.rating}</span>
-          </div>
+          </button>
         ))}
       </Section>
     </div>
@@ -1001,29 +1054,32 @@ export function SettingsScreen() {
 
 /* ---------------- Profile ---------------- */
 export function ProfileScreen() {
+  const { user } = useCC();
   return (
     <div>
       <div className="cc-grad-deep px-5 pt-6 pb-12 rounded-b-[2.5rem] text-white">
         <div className="flex items-center gap-4">
           <div className="relative">
-            <div className="w-20 h-20 rounded-full bg-white/20 backdrop-blur flex items-center justify-center text-3xl font-bold">U</div>
+            <div className="w-20 h-20 rounded-full bg-white/20 backdrop-blur flex items-center justify-center text-3xl font-bold">
+              {user?.name?.[0]?.toUpperCase() || "U"}
+            </div>
             <button className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-white text-primary flex items-center justify-center cc-shadow"><Pencil className="w-3.5 h-3.5" /></button>
           </div>
           <div>
-            <div className="text-xl font-bold">Hello User</div>
-            <div className="text-cyan-100 text-sm">user1324@gmail.com</div>
+            <div className="text-xl font-bold">{user?.name || "Guest"}</div>
+            <div className="text-cyan-100 text-sm">{user?.email || "Not provided"}</div>
           </div>
         </div>
       </div>
       <div className="px-5 -mt-6">
         <div className="bg-card border rounded-3xl p-4 cc-shadow grid gap-3">
           {[
-            { l: "Age", v: "56 Years" },
-            { l: "Email", v: "user1324@gmail.com" },
-            { l: "Phone number", v: "+91 7456834678" },
-            { l: "ID", v: "CC-2847-9921" },
-            { l: "Policy", v: "Gold Care · #PL338211" },
-            { l: "Residence", v: "Mumbai" },
+            { l: "Age", v: user?.age ? `${user.age} Years` : "Not provided" },
+            { l: "Email", v: user?.email || "Not provided" },
+            { l: "Phone number", v: user?.phone || "Not provided" },
+            { l: "ID", v: user?.id ? `CC-${user.id.slice(0, 8).toUpperCase()}` : "Not provided" },
+            { l: "Policy", v: "Coming soon" },
+            { l: "Residence", v: user?.address || "Not provided" },
           ].map((f) => (
             <div key={f.l} className="flex items-center justify-between text-sm border-b last:border-0 pb-2 last:pb-0">
               <span className="text-muted-foreground">{f.l}</span>
