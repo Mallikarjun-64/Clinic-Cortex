@@ -10,6 +10,7 @@ import {
 } from 'recharts';
 import aiAvatarImage from "../../assets/ai-avatar.png";
 import { getDoctorDisplayName, getDoctorEmail, getDoctorSpecialty, getDoctorInitials, getStoredDoctorProfile } from "../lib/doctorProfile";
+import { api } from "../lib/api";
 
 const renderWeeklyBarLabel = (props: any) => {
   const { x, y, width, value, index } = props;
@@ -69,18 +70,68 @@ export function DoctorProfile() {
     photoUrl: aiAvatarImage
   });
 
-  useEffect(() => {
-    const storedProfile = getStoredDoctorProfile();
-    if (storedProfile) {
-      setProfile((prev) => ({
-        ...prev,
-        name: getDoctorDisplayName(),
-        specialty: getDoctorSpecialty(),
-        email: getDoctorEmail(),
-        phone: storedProfile.mobile || prev.phone,
-      }));
+  const [loading, setLoading] = useState(false);
+
+  async function loadProfile() {
+    setLoading(true);
+    try {
+      const res = await api.get('/doctors/profile');
+      if (res.success && res.profile) {
+        const d = res.profile;
+        setProfile({
+          name: `${d.first_name || ""} ${d.last_name || ""}`.trim(),
+          specialty: d.pg_specialization || d.mbbs_university || "General Practitioner",
+          email: d.personal_email || d.email || "",
+          phone: d.mobile || "+1 234-567-8900",
+          license: d.nmc_reg_no || "MC-2015-45678",
+          photoUrl: d.photo_url || aiAvatarImage
+        });
+      }
+    } catch (err) {
+      console.warn("Could not load doctor profile from API", err);
+    } finally {
+      setLoading(false);
     }
+  }
+
+  useEffect(() => {
+    loadProfile();
   }, []);
+
+  const handleSaveProfile = async () => {
+    const nameParts = profile.name.split(" ");
+    const firstName = nameParts[0] || "";
+    const lastName = nameParts.slice(1).join(" ") || "";
+    
+    setLoading(true);
+    try {
+      const res = await api.put('/doctors/profile', {
+        firstName,
+        lastName,
+        personalEmail: profile.email,
+        mobile: profile.phone,
+        pgSpecialization: profile.specialty
+      });
+      if (res.success) {
+        alert("Profile saved successfully.");
+        const stored = localStorage.getItem("clinic_cortex_verified_doctor");
+        const parsed = stored ? JSON.parse(stored) : {};
+        localStorage.setItem("clinic_cortex_verified_doctor", JSON.stringify({
+          ...parsed,
+          firstName,
+          lastName,
+          profEmail: profile.email,
+          mobile: profile.phone
+        }));
+        setIsEditModalOpen(false);
+        loadProfile();
+      }
+    } catch (err: any) {
+      alert(err.message || "Failed to update profile");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -210,7 +261,7 @@ export function DoctorProfile() {
               </div>
 
               <button 
-                onClick={() => setIsEditModalOpen(false)}
+                onClick={handleSaveProfile}
                 className="w-full bg-[#163CC7] hover:bg-blue-700 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-blue-500/30"
               >
                 <Save size={18} /> Save Changes

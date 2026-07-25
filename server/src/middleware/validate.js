@@ -33,3 +33,18 @@ export const appointmentValidationRules = [
   body('time').matches(/^([01]\d|2[0-3]):([0-5]\d)(:[0-5]\d)?$/).withMessage('Appointment Time must be in valid HH:MM or HH:MM:SS format'),
   runValidation
 ];
+
+// Parameter validation middleware for PG UUID safety
+export const validateUuidParam = (req, res, next) => {
+  const { id } = req.params;
+  if (id) {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(id)) {
+      return res.status(404).json({
+        success: false,
+        message: 'Resource not found. Invalid ID format.'
+      });
+    }
+  }
+  next();
+};

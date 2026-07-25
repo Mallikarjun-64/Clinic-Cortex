@@ -38,9 +38,9 @@ export function Dashboard() {
   });
 
   const [consultationRequests, setConsultationRequests] = useState([
-    { id: 1, patient: "Lisa Anderson", time: "Requested 10 min ago", type: "Virtual", priority: "High" },
-    { id: 2, patient: "Robert Taylor", time: "Requested 25 min ago", type: "Virtual", priority: "Medium" },
-    { id: 3, patient: "Maria Garcia", time: "Requested 1 hr ago", type: "Virtual", priority: "Low" },
+    { id: "e6d5e744-42b7-4a0b-8d76-bc34407b8b20", patient: "Lisa Anderson", time: "Requested 10 min ago", type: "Virtual", priority: "High" },
+    { id: "e6d5e744-42b7-4a0b-8d76-bc34407b8b21", patient: "Robert Taylor", time: "Requested 25 min ago", type: "Virtual", priority: "Medium" },
+    { id: "e6d5e744-42b7-4a0b-8d76-bc34407b8b22", patient: "Maria Garcia", time: "Requested 1 hr ago", type: "Virtual", priority: "Low" },
   ]);
 
   const [appointmentStats, setAppointmentStats] = useState([

@@ -30,8 +30,8 @@ INSERT INTO patients (id, name, age, gender, dob, phone, email, address, conditi
 ('b2a95c96-3c05-4f40-84e1-a083a216db8e', 'Meghna k Gunaga', 45, 'Male', '1981-03-24', '+1 234-567-8901', 'john.smith@email.com', '123 Main St, City', 'Hypertension', '2026-03-28'),
 ('c3b06d87-4d16-5e51-95f2-b194b327ec9f', 'Emma Wilson', 32, 'Female', '1994-08-12', '+1 234-567-8902', 'emma.wilson@email.com', '456 Oak Ave, City', 'Diabetes Type 2', '2026-03-30'),
 ('d4c17e98-5e27-6f62-a603-c2a5c438fd0a', 'Michael Brown', 58, 'Male', '1968-11-05', '+1 234-567-8903', 'michael.brown@email.com', '789 Pine Rd, City', 'Asthma', '2026-04-01'),
-('e5d28f09-6f38-7g73-b714-d3b6d549fe1b', 'Sarah Davis', 41, 'Female', '1985-02-14', '+1 234-567-8904', 'sarah.davis@email.com', '321 Elm St, City', 'Migraine', '2026-03-25'),
-('f6e39g10-7g49-8h84-c825-e4c7e650gf2c', 'James Miller', 36, 'Male', '1990-09-22', '+1 234-567-8905', 'james.miller@email.com', '654 Birch Ln, City', 'Back Pain', '2026-04-02');
+('e5d28f09-6f38-7f73-b714-d3b6d549fe1b', 'Sarah Davis', 41, 'Female', '1985-02-14', '+1 234-567-8904', 'sarah.davis@email.com', '321 Elm St, City', 'Migraine', '2026-03-25'),
+('f6e39f10-7f49-8f84-c825-e4c7e650ef2c', 'James Miller', 36, 'Male', '1990-09-22', '+1 234-567-8905', 'james.miller@email.com', '654 Birch Ln, City', 'Back Pain', '2026-04-02');
 
 -- ============================================
 -- 3. SEED APPOINTMENTS

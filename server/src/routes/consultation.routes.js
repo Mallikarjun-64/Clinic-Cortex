@@ -1,6 +1,7 @@
 import express from 'express';
 import { query } from '../config/db.js';
 import { authenticateToken } from '../middleware/auth.js';
+import { validateUuidParam } from '../middleware/validate.js';
 
 const router = express.Router();
 
@@ -28,7 +29,7 @@ router.get('/', authenticateToken, async (req, res) => {
 
 // @route   PATCH /api/consultations/:id/accept
 // @desc    Accept a consultation request
-router.patch('/:id/accept', authenticateToken, async (req, res) => {
+router.patch('/:id/accept', authenticateToken, validateUuidParam, async (req, res) => {
   const { id } = req.params;
 
   try {
@@ -73,7 +74,7 @@ router.patch('/:id/accept', authenticateToken, async (req, res) => {
 
 // @route   PATCH /api/consultations/:id/reject
 // @desc    Reject a consultation request
-router.patch('/:id/reject', authenticateToken, async (req, res) => {
+router.patch('/:id/reject', authenticateToken, validateUuidParam, async (req, res) => {
   const { id } = req.params;
 
   try {

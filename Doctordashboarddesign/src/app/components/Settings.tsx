@@ -1,5 +1,6 @@
 import { ChangeEvent, useEffect, useState } from "react";
 import { getDoctorDisplayName, getDoctorEmail, getStoredDoctorProfile } from "../lib/doctorProfile";
+import { api } from "../lib/api";
 
 type Profile = {
   firstName: string;
@@ -26,18 +27,43 @@ export function Settings() {
   });
   const [passwords, setPasswords] = useState({ current: "", newPass: "", confirm: "" });
   const [preference, setPreference] = useState({ language: "English", timezone: "UTC-7", darkMode: false });
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const stored = getStoredDoctorProfile();
-    if (stored) {
-      setProfile((prev) => ({
-        ...prev,
-        firstName: stored.firstName || prev.firstName,
-        lastName: stored.lastName || prev.lastName,
-        email: stored.profEmail || prev.email,
-        phone: stored.mobile || prev.phone,
-      }));
+    async function loadProfile() {
+      setLoading(true);
+      try {
+        const res = await api.get('/doctors/profile');
+        if (res.success && res.profile) {
+          const d = res.profile;
+          setProfile({
+            firstName: d.first_name || "",
+            lastName: d.last_name || "",
+            email: d.personal_email || d.email || "",
+            phone: d.mobile || "",
+            country: d.nationality || "India",
+            city: d.city || "",
+            address: d.clinic_address || "",
+            zip: d.pincode || "",
+          });
+        }
+      } catch (err) {
+        console.warn("Could not load doctor profile from API, fallback to local storage", err);
+        const stored = getStoredDoctorProfile();
+        if (stored) {
+          setProfile((prev) => ({
+            ...prev,
+            firstName: stored.firstName || prev.firstName,
+            lastName: stored.lastName || prev.lastName,
+            email: stored.profEmail || prev.email,
+            phone: stored.mobile || prev.phone,
+          }));
+        }
+      } finally {
+        setLoading(false);
+      }
     }
+    loadProfile();
   }, []);
   const [privacySettings, setPrivacySettings] = useState({ analytics: true, recommendations: false, dataShare: false });
 
@@ -71,6 +97,65 @@ export function Settings() {
 
   const updatePassword = (key: keyof typeof passwords, value: string) => {
     setPasswords((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleSaveProfile = async () => {
+    setLoading(true);
+    try {
+      const res = await api.put('/doctors/profile', {
+        firstName: profile.firstName,
+        lastName: profile.lastName,
+        personalEmail: profile.email,
+        mobile: profile.phone,
+        nationality: profile.country,
+        city: profile.city,
+        clinicAddress: profile.address,
+        pincode: profile.zip
+      });
+      if (res.success) {
+        alert("Profile saved successfully.");
+        // Sync local storage so header layout updates instantly
+        const stored = localStorage.getItem("clinic_cortex_verified_doctor");
+        const parsed = stored ? JSON.parse(stored) : {};
+        localStorage.setItem("clinic_cortex_verified_doctor", JSON.stringify({
+          ...parsed,
+          firstName: profile.firstName,
+          lastName: profile.lastName,
+          profEmail: profile.email,
+          mobile: profile.phone
+        }));
+      }
+    } catch (err: any) {
+      alert(err.message || "Failed to update profile");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdatePassword = async () => {
+    if (!passwords.newPass || passwords.newPass.length < 6) {
+      alert("New password must be at least 6 characters long.");
+      return;
+    }
+    if (passwords.newPass !== passwords.confirm) {
+      alert("New password and confirm password do not match.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await api.put('/doctors/password', {
+        oldPassword: passwords.current,
+        newPassword: passwords.newPass
+      });
+      if (res.success) {
+        alert("Password updated successfully.");
+        setPasswords({ current: "", newPass: "", confirm: "" });
+      }
+    } catch (err: any) {
+      alert(err.message || "Failed to update password");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleFile = (event: ChangeEvent<HTMLInputElement>) => {
@@ -209,7 +294,7 @@ export function Settings() {
                   </div>
                 </div>
 
-                <button className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#163CC7] to-[#4F6FE5] text-white font-semibold">Save Changes</button>
+                <button onClick={handleSaveProfile} className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#163CC7] to-[#4F6FE5] text-white font-semibold">Save Changes</button>
               </div>
             )}
 
@@ -308,7 +393,7 @@ export function Settings() {
                     className="w-full p-3 border border-slate-200 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#163CC7] dark:focus:ring-[#4F6FE5]"
                   />
                 </div>
-                <button className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#163CC7] to-[#4F6FE5] text-white font-semibold">Update Security</button>
+                <button onClick={handleUpdatePassword} className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#163CC7] to-[#4F6FE5] text-white font-semibold">Update Security</button>
               </div>
             )}
 
