@@ -34,6 +34,20 @@ function Badge({ tone, children }: { tone: "normal" | "lower"; children: React.R
 /* ---------------- Home ---------------- */
 export function HomeScreen() {
   const { setScreen, t } = useCC();
+  const [upcoming, setUpcoming] = useState<any>(null);
+
+  useEffect(() => {
+    api.get('/appointments?tab=upcoming')
+      .then((res) => {
+        if (res.success && Array.isArray(res.appointments) && res.appointments.length > 0) {
+          setUpcoming(res.appointments[0]);
+        } else {
+          setUpcoming(null);
+        }
+      })
+      .catch(() => setUpcoming(null));
+  }, []);
+
   const services = [
     { id: "appointments" as Screen, label: t("appointment"), icon: Calendar, color: "from-blue-500 to-indigo-600" },
     { id: "vitals" as Screen, label: t("vitals"), icon: Heart, color: "from-rose-500 to-pink-600" },
@@ -74,24 +88,37 @@ export function HomeScreen() {
       </Section>
 
       <Section title="Upcoming Appointment" action={<button onClick={() => setScreen("appointments")} className="text-xs text-primary font-semibold">See all</button>}>
-        <div className="bg-card border rounded-3xl p-4 cc-shadow">
-          <div className="flex items-center gap-3">
-            <div className="w-14 h-14 rounded-2xl cc-grad-deep text-white flex items-center justify-center text-lg font-bold">R</div>
-            <div className="flex-1">
-              <div className="font-semibold">Dr. Ronaldo Richard</div>
-              <div className="text-xs text-muted-foreground">General Medicine</div>
+        {upcoming ? (
+          <div className="bg-card border rounded-3xl p-4 cc-shadow">
+            <div className="flex items-center gap-3">
+              <div className="w-14 h-14 rounded-2xl cc-grad-deep text-white flex items-center justify-center text-lg font-bold">
+                {upcoming.doctor_name ? (upcoming.doctor_name.split(" ")[1]?.[0] || upcoming.doctor_name[0]) : 'D'}
+              </div>
+              <div className="flex-1">
+                <div className="font-semibold">{upcoming.doctor_name || 'Dr. Specialist'}</div>
+                <div className="text-xs text-muted-foreground">{upcoming.doctor_specialization || upcoming.condition || 'General Consult'}</div>
+              </div>
+              <div className="text-right">
+                <div className="text-xs text-muted-foreground">
+                  {new Date(upcoming.appointment_date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: '2-digit' })}
+                </div>
+                <div className="text-sm font-semibold text-primary">{upcoming.appointment_time}</div>
+              </div>
             </div>
-            <div className="text-right">
-              <div className="text-xs text-muted-foreground">Wed, Nov 04</div>
-              <div className="text-sm font-semibold text-primary">10:30 AM</div>
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              <button className="rounded-xl bg-primary text-primary-foreground text-xs font-semibold py-2 active:scale-95">Queue</button>
+              <button className="rounded-xl border text-xs font-semibold py-2 active:scale-95">Reschedule</button>
+              <button className="rounded-xl border text-xs font-semibold py-2 text-red-500 active:scale-95">Cancel</button>
             </div>
           </div>
-          <div className="mt-4 grid grid-cols-3 gap-2">
-            <button className="rounded-xl bg-primary text-primary-foreground text-xs font-semibold py-2 active:scale-95">Queue</button>
-            <button className="rounded-xl border text-xs font-semibold py-2 active:scale-95">Reschedule</button>
-            <button className="rounded-xl border text-xs font-semibold py-2 text-red-500 active:scale-95">Cancel</button>
+        ) : (
+          <div className="bg-card border rounded-3xl p-6 text-center cc-shadow">
+            <p className="text-xs text-muted-foreground">No upcoming appointments scheduled</p>
+            <button onClick={() => setScreen("appointments")} className="mt-3 px-4 py-2 rounded-xl cc-grad-deep text-white text-xs font-semibold">
+              Book Appointment
+            </button>
           </div>
-        </div>
+        )}
       </Section>
 
       <Section title="Health snapshot" action={<button onClick={() => setScreen("vitals")} className="text-xs text-primary font-semibold">All vitals</button>}>
@@ -126,6 +153,7 @@ export function AppointmentsScreen() {
   const { setScreen, setSelectedDoctorId } = useCC();
   const [tab, setTab] = useState<"upcoming" | "book" | "missed" | "completed">("upcoming");
   const [topDoctors, setTopDoctors] = useState<any[]>([]);
+  const [appointments, setAppointments] = useState<any[]>([]);
 
   useEffect(() => {
     api.get('/doctors-directory').then((res) => {
@@ -145,6 +173,20 @@ export function AppointmentsScreen() {
       }
     }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (tab !== "book") {
+      api.get(`/appointments?tab=${tab}`)
+        .then((res) => {
+          if (res.success && Array.isArray(res.appointments)) {
+            setAppointments(res.appointments);
+          } else {
+            setAppointments([]);
+          }
+        })
+        .catch(() => setAppointments([]));
+    }
+  }, [tab]);
 
   return (
     <div>
@@ -173,20 +215,32 @@ export function AppointmentsScreen() {
 
       <div className="px-5 mt-5 grid gap-3 cc-fade-up" key={tab}>
         {tab === "upcoming" && (
-          <div className="bg-card border rounded-3xl p-4 cc-shadow">
-            <div className="flex items-center gap-3">
-              <div className="w-14 h-14 rounded-2xl cc-grad-deep text-white flex items-center justify-center font-bold">R</div>
-              <div className="flex-1">
-                <div className="font-semibold">Dr. Ronaldo Richard</div>
-                <div className="text-xs text-muted-foreground">General Medicine • Wed, Nov 04 • 10:30 AM</div>
+          appointments.length === 0 ? (
+            <div className="bg-card border rounded-3xl p-6 text-center text-sm text-muted-foreground">
+              No upcoming appointments
+            </div>
+          ) : (
+            appointments.map((a) => (
+              <div key={a.id} className="bg-card border rounded-3xl p-4 cc-shadow">
+                <div className="flex items-center gap-3">
+                  <div className="w-14 h-14 rounded-2xl cc-grad-deep text-white flex items-center justify-center font-bold text-lg">
+                    {a.doctor_name ? (a.doctor_name.split(" ")[1]?.[0] || a.doctor_name[0]) : 'D'}
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-semibold">{a.doctor_name || 'Dr. Specialist'}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {a.doctor_specialization || a.condition || 'General Medicine'} • {new Date(a.appointment_date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: '2-digit' })} • {a.appointment_time}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-4 grid grid-cols-3 gap-2">
+                  <button className="rounded-xl cc-grad-deep text-white text-xs font-semibold py-2">Generate Queue</button>
+                  <button className="rounded-xl border text-xs font-semibold py-2"><RotateCcw className="w-3 h-3 inline mr-1" />Reschedule</button>
+                  <button className="rounded-xl border text-xs font-semibold py-2 text-red-500"><XCircle className="w-3 h-3 inline mr-1" />Cancel</button>
+                </div>
               </div>
-            </div>
-            <div className="mt-4 grid grid-cols-3 gap-2">
-              <button className="rounded-xl cc-grad-deep text-white text-xs font-semibold py-2">Generate Queue</button>
-              <button className="rounded-xl border text-xs font-semibold py-2"><RotateCcw className="w-3 h-3 inline mr-1" />Reschedule</button>
-              <button className="rounded-xl border text-xs font-semibold py-2 text-red-500"><XCircle className="w-3 h-3 inline mr-1" />Cancel</button>
-            </div>
-          </div>
+            ))
+          )
         )}
 
         {tab === "book" && (
@@ -236,31 +290,45 @@ export function AppointmentsScreen() {
         )}
 
         {tab === "missed" && (
-          <div className="bg-card border rounded-3xl p-4">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-red-100 dark:bg-red-950/50 text-red-500 flex items-center justify-center"><XCircle className="w-6 h-6" /></div>
-              <div className="flex-1">
-                <div className="font-semibold">Dr. Asha Verma</div>
-                <div className="text-xs text-muted-foreground">Cardiology · Oct 22 · Missed</div>
-              </div>
-              <button className="px-3 py-2 rounded-xl cc-grad-deep text-white text-xs font-semibold">Rebook</button>
+          appointments.length === 0 ? (
+            <div className="bg-card border rounded-3xl p-6 text-center text-sm text-muted-foreground">
+              No cancelled or missed appointments
             </div>
-          </div>
+          ) : (
+            appointments.map((a) => (
+              <div key={a.id} className="bg-card border rounded-3xl p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-red-100 dark:bg-red-950/50 text-red-500 flex items-center justify-center"><XCircle className="w-6 h-6" /></div>
+                  <div className="flex-1">
+                    <div className="font-semibold">{a.doctor_name || 'Dr. Specialist'}</div>
+                    <div className="text-xs text-muted-foreground">{a.doctor_specialization || 'Consultation'} · {new Date(a.appointment_date).toLocaleDateString()} · {a.status}</div>
+                  </div>
+                  <button onClick={() => { setSelectedDoctorId(a.doctor_id); setScreen("booking"); }} className="px-3 py-2 rounded-xl cc-grad-deep text-white text-xs font-semibold">Rebook</button>
+                </div>
+              </div>
+            ))
+          )
         )}
 
         {tab === "completed" && (
-          [1, 2].map((i) => (
-            <div key={i} className="bg-card border rounded-3xl p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 flex items-center justify-center"><CheckCircle2 className="w-6 h-6" /></div>
-                <div className="flex-1">
-                  <div className="font-semibold">Dr. Kiran Iyer</div>
-                  <div className="text-xs text-muted-foreground">Pediatrics · Sep 1{i} · Completed</div>
-                </div>
-                <button className="px-3 py-2 rounded-xl border text-xs font-semibold">View</button>
-              </div>
+          appointments.length === 0 ? (
+            <div className="bg-card border rounded-3xl p-6 text-center text-sm text-muted-foreground">
+              No completed appointments
             </div>
-          ))
+          ) : (
+            appointments.map((a) => (
+              <div key={a.id} className="bg-card border rounded-3xl p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 flex items-center justify-center"><CheckCircle2 className="w-6 h-6" /></div>
+                  <div className="flex-1">
+                    <div className="font-semibold">{a.doctor_name || 'Dr. Specialist'}</div>
+                    <div className="text-xs text-muted-foreground">{a.doctor_specialization || 'Consultation'} · {new Date(a.appointment_date).toLocaleDateString()} · Completed</div>
+                  </div>
+                  <button className="px-3 py-2 rounded-xl border text-xs font-semibold">View</button>
+                </div>
+              </div>
+            ))
+          )
         )}
       </div>
     </div>
@@ -430,7 +498,8 @@ export function BookingScreen() {
 
 /* ---------------- Chat ---------------- */
 export function ChatScreen() {
-  const { setScreen } = useCC();
+  const { setScreen, selectedDoctorId } = useCC();
+  const [activeDoctor, setActiveDoctor] = useState<any>(null);
   const [messages, setMessages] = useState<{ me: boolean; text: string }[]>([
     { me: false, text: "Hi! How are you feeling today?" },
     { me: true, text: "Slight headache since morning." },
@@ -438,6 +507,16 @@ export function ChatScreen() {
   ]);
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false);
+
+  useEffect(() => {
+    api.get('/doctors-directory').then((res) => {
+      const list = res.doctors || [];
+      if (Array.isArray(list) && list.length > 0) {
+        const found = list.find((d: any) => d.id === selectedDoctorId) || list[0];
+        setActiveDoctor(found);
+      }
+    }).catch(() => {});
+  }, [selectedDoctorId]);
 
   const send = () => {
     if (!input.trim()) return;
@@ -450,13 +529,16 @@ export function ChatScreen() {
     }, 1400);
   };
 
+  const docName = activeDoctor ? `${activeDoctor.salutation || 'Dr.'} ${activeDoctor.first_name} ${activeDoctor.last_name}`.trim() : "Doctor Consultation";
+  const docInitial = activeDoctor ? (activeDoctor.last_name?.[0] || activeDoctor.first_name?.[0] || "D") : "D";
+
   return (
     <div className="flex flex-col h-[calc(100vh-65px)]">
       <div className="border-b px-4 py-3 flex items-center gap-3 bg-card">
         <button onClick={() => setScreen("home")} className="text-muted-foreground text-sm">←</button>
-        <div className="w-10 h-10 rounded-2xl cc-grad-deep text-white flex items-center justify-center font-bold">R</div>
+        <div className="w-10 h-10 rounded-2xl cc-grad-deep text-white flex items-center justify-center font-bold">{docInitial}</div>
         <div className="flex-1">
-          <div className="font-semibold text-sm">Dr. Ronaldo Richard</div>
+          <div className="font-semibold text-sm">{docName}</div>
           <div className="text-[11px] text-emerald-500 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />Online</div>
         </div>
         <button className="p-2 rounded-xl hover:bg-muted"><Phone className="w-5 h-5 text-primary" /></button>

@@ -6,85 +6,6 @@ import { verifyToken, verifyPatientToken } from '../utils/jwt.js';
 
 const router = express.Router();
 
-// @route   GET /api/appointments
-// @desc    List appointments for the logged-in doctor, with tabs/filters
-router.get('/', authenticateToken, async (req, res) => {
-  const { tab, type, date, search } = req.query;
-
-  try {
-    let sql = 'SELECT * FROM appointments WHERE doctor_id = $1';
-    const params = [req.user.id];
-
-    // Filter by tab status groups
-    if (tab) {
-      if (tab === 'upcoming') {
-        params.push('Confirmed');
-        params.push('Scheduled');
-        params.push('Waiting');
-        sql += ` AND status IN ($${params.length - 2}, $${params.length - 1}, $${params.length})`;
-      } else if (tab === 'completed') {
-        params.push('Completed');
-        sql += ` AND status = $${params.length}`;
-      } else if (tab === 'missed') {
-        params.push('Missed');
-        params.push('Cancelled');
-        sql += ` AND status IN ($${params.length - 1}, $${params.length})`;
-      } else {
-        params.push(tab);
-        sql += ` AND status = $${params.length}`;
-      }
-    }
-
-    // Filter by visit type (Clinic, Video, Home)
-    if (type) {
-      params.push(type);
-      sql += ` AND visit_type = $${params.length}`;
-    }
-
-    // Filter by appointment date
-    if (date) {
-      params.push(date);
-      sql += ` AND appointment_date = $${params.length}`;
-    }
-
-    // Search by patient name or condition
-    if (search) {
-      params.push(`%${search}%`);
-      sql += ` AND (patient_name ILIKE $${params.length} OR condition ILIKE $${params.length})`;
-    }
-
-    sql += ' ORDER BY appointment_date ASC, appointment_time ASC';
-
-    const result = await query(sql, params);
-    res.status(200).json({ success: true, count: result.rows.length, appointments: result.rows });
-  } catch (err) {
-    console.error('List Appointments Error:', err);
-    res.status(500).json({ success: false, message: 'Server error listing appointments' });
-  }
-});
-
-// @route   GET /api/appointments/:id
-// @desc    Get detailed record of a single appointment
-router.get('/:id', authenticateToken, async (req, res) => {
-  const { id } = req.params;
-
-  try {
-    const result = await query(
-      'SELECT * FROM appointments WHERE id = $1 AND doctor_id = $2',
-      [id, req.user.id]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Appointment not found.' });
-    }
-
-    res.status(200).json({ success: true, appointment: result.rows[0] });
-  } catch (err) {
-    console.error('Fetch Appointment Error:', err);
-    res.status(500).json({ success: false, message: 'Server error retrieving appointment' });
-  }
-});
-
 // Custom middleware to authenticate either Doctor or Patient token
 const authenticateEitherUser = (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -121,6 +42,113 @@ const authenticateEitherUser = (req, res, next) => {
     });
   }
 };
+
+// @route   GET /api/appointments
+// @desc    List appointments for the logged-in doctor or patient, with tabs/filters
+router.get('/', authenticateEitherUser, async (req, res) => {
+  const { tab, type, date, search } = req.query;
+
+  try {
+    let sql;
+    let params;
+
+    if (req.isDoctor) {
+      sql = 'SELECT a.* FROM appointments a WHERE a.doctor_id = $1';
+      params = [req.user.id];
+    } else {
+      sql = `SELECT a.*, 
+                    CONCAT(d.salutation, ' ', d.first_name, ' ', d.last_name) as doctor_name,
+                    d.pg_specialization as doctor_specialization,
+                    d.profile_photo_url as doctor_avatar
+             FROM appointments a 
+             LEFT JOIN doctors d ON a.doctor_id = d.id 
+             WHERE a.patient_id = $1`;
+      params = [req.patient.id];
+    }
+
+    // Filter by tab status groups
+    if (tab) {
+      if (tab === 'upcoming') {
+        params.push('Confirmed');
+        params.push('Scheduled');
+        params.push('Waiting');
+        sql += ` AND a.status IN ($${params.length - 2}, $${params.length - 1}, $${params.length})`;
+      } else if (tab === 'completed') {
+        params.push('Completed');
+        sql += ` AND a.status = $${params.length}`;
+      } else if (tab === 'missed') {
+        params.push('Missed');
+        params.push('Cancelled');
+        sql += ` AND a.status IN ($${params.length - 1}, $${params.length})`;
+      } else {
+        params.push(tab);
+        sql += ` AND a.status = $${params.length}`;
+      }
+    }
+
+    // Filter by visit type (Clinic, Video, Home)
+    if (type) {
+      params.push(type);
+      sql += ` AND a.visit_type = $${params.length}`;
+    }
+
+    // Filter by appointment date
+    if (date) {
+      params.push(date);
+      sql += ` AND a.appointment_date = $${params.length}`;
+    }
+
+    // Search by patient name or condition
+    if (search) {
+      params.push(`%${search}%`);
+      sql += ` AND (a.patient_name ILIKE $${params.length} OR a.condition ILIKE $${params.length})`;
+    }
+
+    sql += ' ORDER BY a.appointment_date ASC, a.appointment_time ASC';
+
+    const result = await query(sql, params);
+    res.status(200).json({ success: true, count: result.rows.length, appointments: result.rows });
+  } catch (err) {
+    console.error('List Appointments Error:', err);
+    res.status(500).json({ success: false, message: 'Server error listing appointments' });
+  }
+});
+
+// @route   GET /api/appointments/:id
+// @desc    Get detailed record of a single appointment
+router.get('/:id', authenticateEitherUser, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    let sql;
+    let params;
+
+    if (req.isDoctor) {
+      sql = 'SELECT * FROM appointments WHERE id = $1 AND doctor_id = $2';
+      params = [id, req.user.id];
+    } else {
+      sql = `SELECT a.*, 
+                    CONCAT(d.salutation, ' ', d.first_name, ' ', d.last_name) as doctor_name,
+                    d.pg_specialization as doctor_specialization,
+                    d.profile_photo_url as doctor_avatar
+             FROM appointments a 
+             LEFT JOIN doctors d ON a.doctor_id = d.id 
+             WHERE a.id = $1 AND a.patient_id = $2`;
+      params = [id, req.patient.id];
+    }
+
+    const result = await query(sql, params);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Appointment not found.' });
+    }
+
+    res.status(200).json({ success: true, appointment: result.rows[0] });
+  } catch (err) {
+    console.error('Fetch Appointment Error:', err);
+    res.status(500).json({ success: false, message: 'Server error retrieving appointment' });
+  }
+});
 
 // @route   POST /api/appointments
 // @desc    Create a new appointment slot booking (Doctor or Patient caller)
