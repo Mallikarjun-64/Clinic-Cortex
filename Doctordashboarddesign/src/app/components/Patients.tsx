@@ -128,7 +128,7 @@ export function Patients() {
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-400 border border-slate-200/40 dark:border-slate-700">
-                          {patient.name.split(' ').map(n => n[0]).join('')}
+                          {patient.name.split(' ').map((n: string) => n[0]).join('')}
                         </div>
                         <div className="text-slate-800 dark:text-white font-semibold">{patient.name}</div>
                       </div>
@@ -167,7 +167,7 @@ export function Patients() {
             <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
               <div className="flex items-center gap-3 mb-6">
                 <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#163CC7]-500 to-[#4F6FE5]-600 flex items-center justify-center text-white text-xl font-bold">
-                  {selectedPatientData.name.split(' ').map(n => n[0]).join('')}
+                  {selectedPatientData.name.split(' ').map((n: string) => n[0]).join('')}
                 </div>
                 <div>
                   <h3 className="text-slate-800 dark:text-white font-bold">{selectedPatientData.name}</h3>
