@@ -1,8 +1,10 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router";
 import { Search, Filter, UserPlus, Phone, Mail, MapPin, Calendar, FileText, Activity } from "lucide-react";
 import { api } from "../lib/api";
 
 export function Patients() {
+  const navigate = useNavigate();
   const [selectedPatient, setSelectedPatient] = useState<number | string | null>(1);
   const [searchTerm, setSearchTerm] = useState("");
   const [conditionFilter, setConditionFilter] = useState("all");
@@ -206,10 +208,16 @@ export function Patients() {
               </div>
 
               <div className="mt-6 space-y-2">
-                <button className="w-full px-4 py-2 rounded-lg bg-gradient-to-r from-[#163CC7]-500 to-[#4F6FE5]-600 text-white hover:from-[#163CC7]-600 hover:to-[#4F6FE5]-700 transition-colors font-bold">
+                <button 
+                  onClick={() => navigate('/dashboard/appointments')}
+                  className="w-full px-4 py-2 rounded-lg bg-[#163CC7] hover:bg-blue-700 text-white transition-colors font-bold text-sm"
+                >
                   Book Appointment
                 </button>
-                <button className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors font-bold">
+                <button 
+                  onClick={() => navigate('/dashboard/patient-records')}
+                  className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors font-bold text-sm"
+                >
                   View Full Records
                 </button>
               </div>

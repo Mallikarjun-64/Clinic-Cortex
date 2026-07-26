@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react"; // Removed 'React' reference to fix ReferenceError
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router";
 import { 
   Calendar, Search, Filter, Video, Home as HomeIcon, 
   Building2, MoreVertical, X, CheckCircle2, 
@@ -8,6 +9,7 @@ import { Appointment, loadAppointments, saveAppointments } from "../lib/appointm
 import { api } from "../lib/api";
 
 export function Appointments() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("upcoming");
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState("all");
@@ -15,66 +17,158 @@ export function Appointments() {
   // Modal, Toast, and Expansion States
   const [isRescheduleOpen, setIsRescheduleOpen] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<string | null>(null);
-  const [expandedPatientId, setExpandedPatientId] = useState<number | null>(null); 
+  const [selectedAppointmentId, setSelectedAppointmentId] = useState<number | string | null>(null);
+  const [rescheduleDate, setRescheduleDate] = useState("");
+  const [rescheduleReason, setRescheduleReason] = useState("");
+  const [expandedPatientId, setExpandedPatientId] = useState<number | string | null>(null);
+
+  // New Appointment Modal States
+  const [isNewApptOpen, setIsNewApptOpen] = useState(false);
+  const [newPatientName, setNewPatientName] = useState("");
+  const [newVisitType, setNewVisitType] = useState("Clinic");
+  const [newDate, setNewDate] = useState("");
+  const [newTime, setNewTime] = useState("10:00");
+  const [newCondition, setNewCondition] = useState("");
+  const [newNotes, setNewNotes] = useState("");
   
   const [toastMessage, setToastMessage] = useState("");
   const [showToast, setShowToast] = useState(false);
-  const [openOptionsId, setOpenOptionsId] = useState<number | null>(null);
+  const [openOptionsId, setOpenOptionsId] = useState<number | string | null>(null);
   const [appointments, setAppointments] = useState<Appointment[]>(() => loadAppointments());
 
-  useEffect(() => {
-    async function fetchAppointments() {
-      try {
-        const queryParams = new URLSearchParams();
-        if (activeTab) queryParams.append('tab', activeTab);
-        if (filterType && filterType !== 'all') queryParams.append('type', filterType);
+  async function fetchAppointments() {
+    try {
+      const queryParams = new URLSearchParams();
+      if (activeTab) queryParams.append('tab', activeTab);
+      if (filterType && filterType !== 'all') queryParams.append('type', filterType);
 
-        const res = await api.get(`/appointments?${queryParams.toString()}`);
-        if (res.success && Array.isArray(res.appointments) && res.appointments.length > 0) {
-          const mapped = res.appointments.map((item: any) => ({
-            id: item.id,
-            patient: item.patient_name || item.patient || "Patient",
-            age: item.patient_age || 30,
-            type: item.visit_type || "Clinic",
-            date: item.appointment_date ? new Date(item.appointment_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Apr 2, 2026",
-            time: item.appointment_time || "10:00 AM",
-            status: item.status || "Scheduled",
-            condition: item.condition || "Consultation"
-          }));
-          setAppointments(mapped);
-          saveAppointments(mapped);
-        }
-      } catch (err) {
-        console.warn("API appointments fetch warning, using stored cache", err);
+      const res = await api.get(`/appointments?${queryParams.toString()}`);
+      if (res.success && Array.isArray(res.appointments)) {
+        const mapped = res.appointments.map((item: any) => ({
+          id: item.id,
+          patient: item.patient_name || item.patient || "Patient",
+          age: item.patient_age || 30,
+          type: item.visit_type || "Clinic",
+          date: item.appointment_date ? new Date(item.appointment_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Apr 2, 2026",
+          time: item.appointment_time || "10:00 AM",
+          status: item.status || "Scheduled",
+          condition: item.condition || "Consultation"
+        }));
+        setAppointments(mapped);
+        saveAppointments(mapped);
       }
+    } catch (err) {
+      console.warn("API appointments fetch warning, using stored cache", err);
     }
+  }
+
+  useEffect(() => {
     fetchAppointments();
   }, [activeTab, filterType]);
 
   const handleCancelAppointment = async (id: number | string) => {
     try {
-      await api.patch(`/appointments/${id}/status`, { status: "Cancelled" });
-    } catch (err) {
-      console.warn("API status update error", err);
+      const res = await api.patch(`/appointments/${id}/status`, { status: "Cancelled" });
+      if (res.success) {
+        setAppointments((prev) =>
+          prev.map((apt) =>
+            apt.id === id ? { ...apt, status: "Cancelled" } : apt
+          )
+        );
+        triggerToast("Appointment cancelled and moved to Cancelled.");
+        fetchAppointments();
+      } else {
+        triggerToast(res.message || "Failed to cancel appointment.");
+      }
+    } catch (err: any) {
+      triggerToast(err.message || "API status update error");
     }
-    setAppointments((prev) =>
-      prev.map((apt) =>
-        apt.id === id ? { ...apt, status: "Cancelled" } : apt
-      )
-    );
-    triggerToast("Appointment cancelled and moved to Cancelled.");
     setOpenOptionsId(null);
   };
 
   const handleDeleteAppointment = async (id: number | string) => {
     try {
-      await api.delete(`/appointments/${id}`);
-    } catch (err) {
-      console.warn("API delete appointment error", err);
+      const res = await api.delete(`/appointments/${id}`);
+      if (res.success) {
+        setAppointments((prev) => prev.filter((apt) => apt.id !== id));
+        triggerToast("Appointment deleted successfully.");
+        fetchAppointments();
+      } else {
+        triggerToast(res.message || "Failed to delete appointment.");
+      }
+    } catch (err: any) {
+      triggerToast(err.message || "API delete appointment error");
     }
-    setAppointments((prev) => prev.filter((apt) => apt.id !== id));
-    triggerToast("Appointment deleted successfully.");
     setOpenOptionsId(null);
+  };
+
+  const handleConfirmReschedule = async () => {
+    if (!selectedAppointmentId) return;
+    if (!rescheduleDate) {
+      triggerToast("Please select a new date and time.");
+      return;
+    }
+
+    const parts = rescheduleDate.split('T');
+    const dateStr = parts[0];
+    const timeStr = parts[1] || "10:00";
+
+    try {
+      const res = await api.put(`/appointments/${selectedAppointmentId}`, {
+        date: dateStr,
+        time: timeStr,
+        notes: rescheduleReason || undefined
+      });
+
+      if (res.success) {
+        setIsRescheduleOpen(false);
+        triggerToast("Appointment successfully rescheduled!");
+        await fetchAppointments();
+      } else {
+        triggerToast(res.message || "Failed to reschedule appointment.");
+      }
+    } catch (err: any) {
+      triggerToast(err.message || "Failed to reschedule appointment.");
+    }
+  };
+
+  const handleCreateAppointment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPatientName.trim() || !newDate || !newTime) {
+      triggerToast("Please fill in patient name, date, and time.");
+      return;
+    }
+
+    try {
+      const res = await api.post('/appointments', {
+        patientName: newPatientName,
+        visitType: newVisitType,
+        date: newDate,
+        time: newTime,
+        condition: newCondition || "General Consult",
+        notes: newNotes || undefined
+      });
+
+      if (res.success) {
+        setIsNewApptOpen(false);
+        triggerToast("Appointment scheduled successfully!");
+        await fetchAppointments();
+      } else {
+        triggerToast(res.message || "Failed to schedule appointment.");
+      }
+    } catch (err: any) {
+      triggerToast(err.message || "Error scheduling appointment.");
+    }
+  };
+
+  const handleStartSession = (apt: Appointment) => {
+    if (apt.type === "Video") {
+      navigate("/dashboard/virtual-consultation");
+    } else if (apt.type === "Home") {
+      navigate("/dashboard/home-visits");
+    } else {
+      setExpandedPatientId(expandedPatientId === apt.id ? null : apt.id);
+    }
   };
 
   const tabCounts = appointments.reduce(
@@ -139,7 +233,18 @@ export function Appointments() {
           <h1 className="text-3xl font-bold text-slate-800 dark:text-white mb-1">Appointments</h1>
           <p className="text-slate-500 dark:text-slate-400 font-medium">Manage and track all appointments</p>
         </div>
-        <button className="px-6 py-3 rounded-xl bg-[#163CC7] text-white hover:opacity-90 transition-all flex items-center gap-2 shadow-xl shadow-blue-500/20">
+        <button 
+          onClick={() => {
+            setNewPatientName("");
+            setNewVisitType("Clinic");
+            setNewDate("");
+            setNewTime("10:00");
+            setNewCondition("");
+            setNewNotes("");
+            setIsNewApptOpen(true);
+          }}
+          className="px-6 py-3 rounded-xl bg-[#163CC7] text-white hover:opacity-90 transition-all flex items-center gap-2 shadow-xl shadow-blue-500/20"
+        >
           <Calendar size={20} />
           <span className="font-bold">New Appointment</span>
         </button>
@@ -173,10 +278,6 @@ export function Appointments() {
               <option value="home">Home</option>
             </select>
           </div>
-          <button className="flex items-center justify-center gap-2 px-4 py-3 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold transition-colors">
-            <Filter size={20} />
-            <span>More Filters</span>
-          </button>
         </div>
       </div>
 
@@ -214,7 +315,7 @@ export function Appointments() {
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {filteredAppointments.map((apt) => (
-                <div key={apt.id} className="contents"> {/* Replaced React.Fragment with div contents for better compatibility */}
+                <div key={apt.id} className="contents">
                   <tr className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors ${expandedPatientId === apt.id ? 'bg-slate-50/50 dark:bg-slate-800/20' : ''}`}>
                     <td className="px-8 py-5">
                       <div className="flex items-center gap-4">
@@ -255,8 +356,8 @@ export function Appointments() {
                     </td>
                     <td className="px-6 py-5">
                       <div className="flex items-center gap-3">
-                        <button onClick={() => triggerToast(`Starting session for ${apt.patient}...`)} className="px-4 py-1.5 rounded-lg font-black text-[11px] bg-[#163CC7] text-white hover:shadow-lg transition-all">Start</button>
-                        <button onClick={() => { setSelectedPatient(apt.patient); setIsRescheduleOpen(true); }} className="px-4 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 font-bold text-[11px] text-slate-600 dark:text-slate-350 hover:border-[#163CC7] dark:hover:border-[#4F6FE5] transition-colors">Reschedule</button>
+                        <button onClick={() => handleStartSession(apt)} className="px-4 py-1.5 rounded-lg font-black text-[11px] bg-[#163CC7] text-white hover:shadow-lg transition-all">Start</button>
+                        <button onClick={() => { setSelectedPatient(apt.patient); setSelectedAppointmentId(apt.id); setRescheduleDate(""); setRescheduleReason(""); setIsRescheduleOpen(true); }} className="px-4 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 font-bold text-[11px] text-slate-600 dark:text-slate-350 hover:border-[#163CC7] dark:hover:border-[#4F6FE5] transition-colors">Reschedule</button>
                         <div className="relative">
                           <button
                             onClick={() => setOpenOptionsId(openOptionsId === apt.id ? null : apt.id)}
@@ -325,10 +426,10 @@ export function Appointments() {
                                 <h3 className="text-blue-600 dark:text-blue-400 font-black text-2xl">Care Summary</h3>
                                 <div className="space-y-4">
                                   {[
-                                    { l: "Diagnosis", v: "A-90 Dengue Fever" },
-                                    { l: "Admission Date", v: "23/11/2024" },
-                                    { l: "Nursing Plan", v: "Monitor Vital Signs" },
-                                    { l: "Status", v: "Referred to Polyclinic" }
+                                    { l: "Diagnosis", v: apt.condition || "General Consult" },
+                                    { l: "Appointment Date", v: apt.date },
+                                    { l: "Visit Type", v: apt.type },
+                                    { l: "Status", v: apt.status }
                                   ].map((row, i) => (
                                     <div key={i} className="flex justify-between text-sm py-1 border-b border-slate-50 dark:border-slate-800/40">
                                       <span className="text-blue-600 dark:text-blue-400 font-bold">{row.l}</span>
@@ -355,9 +456,9 @@ export function Appointments() {
                                   </div>
                                 </div>
                                 <div className="p-4 bg-slate-50 dark:bg-slate-900 rounded-2xl">
-                                  <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase mb-2">Main Complaint</div>
+                                  <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase mb-2">Condition Details</div>
                                   <p className="text-xs font-medium text-slate-600 dark:text-slate-350 leading-relaxed italic">
-                                    "Patient reports recurring chronic acute pain and respiratory difficulties. Vital signs monitoring required."
+                                    "{apt.condition} — consultation recorded for patient {apt.patient}."
                                   </p>
                                 </div>
                               </div>
@@ -393,20 +494,120 @@ export function Appointments() {
             <div className="space-y-6">
               <div>
                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-3 block">New Date & Time</label>
-                <input type="datetime-local" className="w-full p-4 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white outline-none focus:ring-4 ring-blue-500/5 transition-all" />
+                <input 
+                  type="datetime-local" 
+                  value={rescheduleDate}
+                  onChange={(e) => setRescheduleDate(e.target.value)}
+                  className="w-full p-4 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white outline-none focus:ring-4 ring-blue-500/5 transition-all" 
+                />
               </div>
               <div>
-                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-3 block">Reason</label>
-                <textarea placeholder="Specify reason..." className="w-full p-4 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white outline-none focus:ring-4 ring-blue-500/5 h-24 resize-none transition-all" />
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-3 block">Reason / Notes</label>
+                <textarea 
+                  value={rescheduleReason}
+                  onChange={(e) => setRescheduleReason(e.target.value)}
+                  placeholder="Specify reason..." 
+                  className="w-full p-4 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white outline-none focus:ring-4 ring-blue-500/5 h-24 resize-none transition-all" 
+                />
               </div>
             </div>
             <button 
-              onClick={() => { setIsRescheduleOpen(false); triggerToast("Appointment successfully rescheduled!"); }}
+              onClick={handleConfirmReschedule}
               className="w-full mt-10 bg-[#163CC7] text-white py-4 rounded-2xl font-black shadow-xl shadow-blue-500/30 hover:-translate-y-1 active:translate-y-0 transition-all"
             >
               Confirm Reschedule
             </button>
           </div>
+        </div>
+      )}
+
+      {/* New Appointment Modal */}
+      {isNewApptOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <form onSubmit={handleCreateAppointment} className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl border border-slate-100 dark:border-slate-800">
+            <div className="flex justify-between items-start mb-6">
+              <h3 className="text-2xl font-black text-slate-900 dark:text-white">New Appointment</h3>
+              <button type="button" onClick={() => setIsNewApptOpen(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-800 dark:text-slate-300 transition-colors"><X size={20}/></button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2 block">Patient Name</label>
+                <input
+                  type="text"
+                  required
+                  value={newPatientName}
+                  onChange={(e) => setNewPatientName(e.target.value)}
+                  placeholder="Enter patient full name..."
+                  className="w-full p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white text-sm outline-none focus:ring-4 ring-blue-500/5 transition-all"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2 block">Visit Type</label>
+                  <select
+                    value={newVisitType}
+                    onChange={(e) => setNewVisitType(e.target.value)}
+                    className="w-full p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white text-sm outline-none focus:ring-4 ring-blue-500/5 transition-all font-bold"
+                  >
+                    <option value="Clinic">Clinic</option>
+                    <option value="Video">Video</option>
+                    <option value="Home">Home</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2 block">Time (HH:MM)</label>
+                  <input
+                    type="time"
+                    required
+                    value={newTime}
+                    onChange={(e) => setNewTime(e.target.value)}
+                    className="w-full p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white text-sm outline-none focus:ring-4 ring-blue-500/5 transition-all"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2 block">Date</label>
+                <input
+                  type="date"
+                  required
+                  value={newDate}
+                  onChange={(e) => setNewDate(e.target.value)}
+                  className="w-full p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white text-sm outline-none focus:ring-4 ring-blue-500/5 transition-all"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2 block">Condition / Reason</label>
+                <input
+                  type="text"
+                  value={newCondition}
+                  onChange={(e) => setNewCondition(e.target.value)}
+                  placeholder="e.g. General Consult, Hypertension"
+                  className="w-full p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white text-sm outline-none focus:ring-4 ring-blue-500/5 transition-all"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2 block">Notes</label>
+                <textarea
+                  value={newNotes}
+                  onChange={(e) => setNewNotes(e.target.value)}
+                  placeholder="Optional consultation notes..."
+                  className="w-full p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white text-sm outline-none focus:ring-4 ring-blue-500/5 h-20 resize-none transition-all"
+                />
+              </div>
+            </div>
+
+            <button 
+              type="submit"
+              className="w-full mt-6 bg-[#163CC7] text-white py-4 rounded-2xl font-black shadow-xl shadow-blue-500/30 hover:-translate-y-1 active:translate-y-0 transition-all text-sm"
+            >
+              Schedule Appointment
+            </button>
+          </form>
         </div>
       )}
 
@@ -419,4 +620,4 @@ export function Appointments() {
       )}
     </div>
   );
-}
+}
