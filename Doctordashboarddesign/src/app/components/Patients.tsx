@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
-import { Search, Filter, UserPlus, Phone, Mail, MapPin, Calendar, FileText, Activity } from "lucide-react";
+import { Search, Filter, UserPlus, Phone, Mail, MapPin, Calendar, FileText, Activity, X, CheckCircle2, AlertCircle } from "lucide-react";
 import { api } from "../lib/api";
 
 export function Patients() {
@@ -11,37 +11,101 @@ export function Patients() {
 
   const [patients, setPatients] = useState<any[]>([]);
 
-  useEffect(() => {
-    async function loadPatients() {
-      try {
-        const queryParams = new URLSearchParams();
-        if (searchTerm) queryParams.append('search', searchTerm);
-        if (conditionFilter && conditionFilter !== 'all') queryParams.append('condition', conditionFilter);
+  // Modal and Toast states for Add New Patient
+  const [isAddPatientOpen, setIsAddPatientOpen] = useState(false);
+  const [newPatientName, setNewPatientName] = useState("");
+  const [newAge, setNewAge] = useState<number | string>("");
+  const [newGender, setNewGender] = useState("Male");
+  const [newPhone, setNewPhone] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [newAddress, setNewAddress] = useState("");
+  const [newCondition, setNewCondition] = useState("");
 
-        const res = await api.get(`/patients?${queryParams.toString()}`);
-        if (res.success && Array.isArray(res.patients) && res.patients.length > 0) {
-          const mapped = res.patients.map((p: any) => ({
-            id: p.id,
-            name: p.name,
-            age: p.age || 30,
-            gender: p.gender || "Male",
-            lastVisit: p.last_visit ? new Date(p.last_visit).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Apr 2, 2026",
-            condition: p.condition || "General",
-            phone: p.phone || "+1 234-567-8900",
-            email: p.email || "patient@clinic.com",
-            address: p.address || "Main Street"
-          }));
-          setPatients(mapped);
-          if (mapped.length > 0) {
-            setSelectedPatient(mapped[0].id);
-          }
+  const [toastMessage, setToastMessage] = useState("");
+  const [showToast, setShowToast] = useState(false);
+  const [toastType, setToastType] = useState<"success" | "error">("success");
+
+  async function loadPatients() {
+    try {
+      const queryParams = new URLSearchParams();
+      if (searchTerm) queryParams.append('search', searchTerm);
+      if (conditionFilter && conditionFilter !== 'all') queryParams.append('condition', conditionFilter);
+
+      const res = await api.get(`/patients?${queryParams.toString()}`);
+      if (res.success && Array.isArray(res.patients) && res.patients.length > 0) {
+        const mapped = res.patients.map((p: any) => ({
+          id: p.id,
+          name: p.name,
+          age: p.age || 30,
+          gender: p.gender || "Male",
+          lastVisit: p.last_visit ? new Date(p.last_visit).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Apr 2, 2026",
+          condition: p.condition || "General",
+          phone: p.phone || "+1 234-567-8900",
+          email: p.email || "patient@clinic.com",
+          address: p.address || "Main Street"
+        }));
+        setPatients(mapped);
+        if (mapped.length > 0 && (!selectedPatient || !mapped.some((item: any) => item.id === selectedPatient))) {
+          setSelectedPatient(mapped[0].id);
         }
-      } catch (err) {
-        console.warn("API patients fetch warning", err);
       }
+    } catch (err) {
+      console.warn("API patients fetch warning", err);
     }
+  }
+
+  useEffect(() => {
     loadPatients();
   }, [searchTerm, conditionFilter]);
+
+  const triggerToast = (msg: string, type: "success" | "error" = "success") => {
+    setToastMessage(msg);
+    setToastType(type);
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 3000);
+  };
+
+  const handleAddPatientSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPatientName.trim()) {
+      triggerToast("Patient name is required.", "error");
+      return;
+    }
+
+    try {
+      const res = await api.post('/patients', {
+        name: newPatientName,
+        age: newAge ? parseInt(String(newAge)) : undefined,
+        gender: newGender,
+        phone: newPhone || undefined,
+        email: newEmail || undefined,
+        address: newAddress || undefined,
+        condition: newCondition || undefined
+      });
+
+      if (res.success) {
+        setIsAddPatientOpen(false);
+        triggerToast("Patient record created successfully!", "success");
+        // Reset form
+        setNewPatientName("");
+        setNewAge("");
+        setNewGender("Male");
+        setNewPhone("");
+        setNewEmail("");
+        setNewAddress("");
+        setNewCondition("");
+        // Re-fetch patient roster so new record appears immediately
+        await loadPatients();
+        if (res.patient?.id) {
+          setSelectedPatient(res.patient.id);
+        }
+      } else {
+        triggerToast(res.message || "Failed to create patient record.", "error");
+      }
+    } catch (err: any) {
+      triggerToast(err.message || "Error creating patient record.", "error");
+    }
+  };
 
   const filteredPatients = patients.filter((patient) => {
     const matchesSearch = searchTerm.trim()
@@ -62,7 +126,19 @@ export function Patients() {
           <h1 className="text-slate-800 dark:text-white mb-1">Patients</h1>
           <p className="text-slate-600 dark:text-slate-400">Manage patient records and information</p>
         </div>
-        <button className="px-4 py-2 rounded-lg bg-gradient-to-r from-[#163CC7]-500 to-[#4F6FE5]-600 text-white hover:from-[#163CC7]-600 hover:to-[#4F6FE5]-700 transition-colors flex items-center gap-2">
+        <button 
+          onClick={() => {
+            setNewPatientName("");
+            setNewAge("");
+            setNewGender("Male");
+            setNewPhone("");
+            setNewEmail("");
+            setNewAddress("");
+            setNewCondition("");
+            setIsAddPatientOpen(true);
+          }}
+          className="px-5 py-2.5 rounded-xl bg-[#163CC7] hover:bg-blue-700 text-white transition-all flex items-center gap-2 font-bold shadow-lg shadow-blue-500/20"
+        >
           <UserPlus size={20} />
           <span>Add New Patient</span>
         </button>
@@ -78,13 +154,13 @@ export function Patients() {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search patients by name, ID, or condition..."
-              className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#163CC7]-500 dark:focus:ring-[#4F6FE5] focus:border-transparent text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400"
+              className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#163CC7] dark:focus:ring-[#4F6FE5] focus:border-transparent text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400"
             />
           </div>
           <select
             value={conditionFilter}
             onChange={(e) => setConditionFilter(e.target.value)}
-            className="px-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#163CC7]-500 dark:focus:ring-[#4F6FE5] focus:border-transparent text-slate-800 dark:text-white"
+            className="px-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#163CC7] dark:focus:ring-[#4F6FE5] focus:border-transparent text-slate-800 dark:text-white"
           >
             <option value="all">All Conditions</option>
             <option value="hypertension">Hypertension</option>
@@ -162,7 +238,7 @@ export function Patients() {
             {/* Patient Info Card */}
             <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
               <div className="flex items-center gap-3 mb-6">
-                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#163CC7]-500 to-[#4F6FE5]-600 flex items-center justify-center text-white text-xl font-bold">
+                <div className="w-16 h-16 rounded-full bg-[#163CC7] flex items-center justify-center text-white text-xl font-bold">
                   {selectedPatientData.name.split(' ').map((n: string) => n[0]).join('')}
                 </div>
                 <div>
@@ -259,6 +335,127 @@ export function Patients() {
           </div>
         )}
       </div>
+
+      {/* Add New Patient Modal */}
+      {isAddPatientOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <form onSubmit={handleAddPatientSubmit} className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-[2.5rem] p-8 shadow-2xl border border-slate-100 dark:border-slate-800">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-2xl font-black text-slate-900 dark:text-white">Add New Patient</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Register a new patient record in ClinicCortex</p>
+              </div>
+              <button type="button" onClick={() => setIsAddPatientOpen(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-800 dark:text-slate-300 transition-colors"><X size={20}/></button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2 block">Full Name *</label>
+                <input
+                  type="text"
+                  required
+                  value={newPatientName}
+                  onChange={(e) => setNewPatientName(e.target.value)}
+                  placeholder="e.g. Eleanor Vance"
+                  className="w-full p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white text-sm outline-none focus:ring-4 ring-blue-500/5 transition-all font-bold"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2 block">Age</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="120"
+                    value={newAge}
+                    onChange={(e) => setNewAge(e.target.value)}
+                    placeholder="e.g. 35"
+                    className="w-full p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white text-sm outline-none focus:ring-4 ring-blue-500/5 transition-all font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2 block">Gender</label>
+                  <select
+                    value={newGender}
+                    onChange={(e) => setNewGender(e.target.value)}
+                    className="w-full p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white text-sm outline-none focus:ring-4 ring-blue-500/5 transition-all font-bold"
+                  >
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2 block">Phone Number</label>
+                  <input
+                    type="text"
+                    value={newPhone}
+                    onChange={(e) => setNewPhone(e.target.value)}
+                    placeholder="+1 555-0192"
+                    className="w-full p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white text-sm outline-none focus:ring-4 ring-blue-500/5 transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2 block">Email Address</label>
+                  <input
+                    type="email"
+                    value={newEmail}
+                    onChange={(e) => setNewEmail(e.target.value)}
+                    placeholder="patient@example.com"
+                    className="w-full p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white text-sm outline-none focus:ring-4 ring-blue-500/5 transition-all"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2 block">Address</label>
+                <input
+                  type="text"
+                  value={newAddress}
+                  onChange={(e) => setNewAddress(e.target.value)}
+                  placeholder="742 Evergreen Terrace, Springfield"
+                  className="w-full p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white text-sm outline-none focus:ring-4 ring-blue-500/5 transition-all"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2 block">Primary Condition / Note</label>
+                <input
+                  type="text"
+                  value={newCondition}
+                  onChange={(e) => setNewCondition(e.target.value)}
+                  placeholder="e.g. Hypertension, Routine Checkup"
+                  className="w-full p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white text-sm outline-none focus:ring-4 ring-blue-500/5 transition-all"
+                />
+              </div>
+            </div>
+
+            <button 
+              type="submit"
+              className="w-full mt-6 bg-[#163CC7] text-white py-4 rounded-2xl font-black shadow-xl shadow-blue-500/30 hover:-translate-y-1 active:translate-y-0 transition-all text-sm"
+            >
+              Create Patient Record
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {showToast && (
+        <div className={`fixed bottom-10 left-1/2 -translate-x-1/2 z-[110] text-white px-8 py-4 rounded-full shadow-2xl flex items-center gap-4 animate-in fade-in slide-in-from-bottom-8 duration-500 ${
+          toastType === "error" ? "bg-rose-900" : "bg-slate-900"
+        }`}>
+          <div className={`rounded-full p-1.5 ${toastType === "error" ? "bg-rose-500" : "bg-green-500"}`}>
+            {toastType === "error" ? <AlertCircle size={16} className="text-white" /> : <CheckCircle2 size={16} className="text-white" />}
+          </div>
+          <span className="font-bold text-sm tracking-tight">{toastMessage}</span>
+        </div>
+      )}
     </div>
   );
 }
+
