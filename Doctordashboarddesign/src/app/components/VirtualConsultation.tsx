@@ -27,26 +27,12 @@ export function VirtualConsultation() {
         setActiveAppointment(active);
         setNotes(active.notes || "");
       } else {
-        // Fallback info if no video appointments found
-        setActiveAppointment({
-          id: "demo-id",
-          patient_name: "Emma Wilson",
-          patient_age: 32,
-          condition: "Persistent headache, fatigue",
-          notes: "Patient reports history of migraines",
-          vitals: JSON.stringify({ temp: "98.6°F", bp: "120/80", hr: "72 bpm" })
-        });
+        setActiveAppointment(null);
       }
     } catch (err: any) {
-      console.warn("API virtual consultation fetch error, using fallbacks", err);
-      setActiveAppointment({
-        id: "demo-id",
-        patient_name: "Emma Wilson",
-        patient_age: 32,
-        condition: "Persistent headache, fatigue",
-        notes: "Patient reports history of migraines",
-        vitals: JSON.stringify({ temp: "98.6°F", bp: "120/80", hr: "72 bpm" })
-      });
+      console.error("API virtual consultation fetch error", err);
+      setError("Unable to load consultation details — do not proceed until this loads.");
+      setActiveAppointment(null);
     } finally {
       setLoading(false);
     }
@@ -57,10 +43,7 @@ export function VirtualConsultation() {
   }, []);
 
   const handleEndCall = async () => {
-    if (!activeAppointment || activeAppointment.id === "demo-id") {
-      alert("Call ended (demo mode).");
-      return;
-    }
+    if (!activeAppointment) return;
     try {
       await api.patch(`/appointments/${activeAppointment.id}/status`, { status: "Completed" });
       await api.put(`/appointments/${activeAppointment.id}`, { notes });
@@ -72,10 +55,7 @@ export function VirtualConsultation() {
   };
 
   const handleSaveNotes = async () => {
-    if (!activeAppointment || activeAppointment.id === "demo-id") {
-      alert("Notes saved successfully (demo mode).");
-      return;
-    }
+    if (!activeAppointment) return;
     try {
       await api.put(`/appointments/${activeAppointment.id}`, { notes });
       alert("Consultation notes updated successfully!");
@@ -104,6 +84,15 @@ export function VirtualConsultation() {
         <div className="py-12 flex justify-center items-center h-full">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#163CC7]" />
         </div>
+      ) : error ? (
+        <div className="p-8 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-3xl text-center max-w-xl mx-auto my-12 shadow-lg">
+          <AlertCircle size={36} className="text-red-500 mx-auto mb-3" />
+          <h2 className="text-lg font-black text-red-600 dark:text-red-400 mb-2">Consultation Load Error</h2>
+          <p className="text-sm font-bold text-red-700 dark:text-red-300 mb-6">{error}</p>
+          <button onClick={loadVideoAppointment} className="px-6 py-3 bg-red-600 text-white rounded-xl text-xs font-bold hover:bg-red-700 shadow-md">
+            Retry Loading Consultation
+          </button>
+        </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
           {/* Main Video Area */}
@@ -113,9 +102,9 @@ export function VirtualConsultation() {
               {/* Patient Video (Main) */}
               <div className="text-center">
                 <div className="w-24 h-24 rounded-full bg-gradient-to-br from-[#163CC7] to-[#4F6FE5] flex items-center justify-center text-white text-3xl font-black mb-4 mx-auto shadow-lg shadow-blue-500/20">
-                  {activeAppointment?.patient_name ? activeAppointment.patient_name.split(' ').map((n: string) => n[0]).join('') : 'EW'}
+                  {activeAppointment?.patient_name ? activeAppointment.patient_name.split(' ').map((n: string) => n[0]).join('') : 'PT'}
                 </div>
-                <div className="text-white text-lg font-bold">{activeAppointment?.patient_name || "Emma Wilson"}</div>
+                <div className="text-white text-lg font-bold">{activeAppointment?.patient_name || "Patient"}</div>
                 <div className="text-slate-400 text-xs font-bold uppercase tracking-wider mt-1">Patient Connection Established</div>
               </div>
 

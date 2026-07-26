@@ -10,9 +10,11 @@ export function TodayAppointmentsStat() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [appointments, setAppointments] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function loadTodayAppointments() {
     setLoading(true);
+    setError(null);
     try {
       const res = await api.get('/appointments?tab=upcoming');
       if (res.success && Array.isArray(res.appointments)) {
@@ -30,14 +32,10 @@ export function TodayAppointmentsStat() {
           setSelectedApt(mapped[0].id);
         }
       }
-    } catch (err) {
-      console.warn("API load today appointments warning, using mock fallback", err);
-      const mockApts = [
-        { id: 1, patientName: "William Turner", time: "09:00 AM", type: "Virtual", condition: "Dermatology Consult", status: "Upcoming", notes: "Review skin rash progression." },
-        { id: 2, patientName: "Sophia Martinez", time: "10:30 AM", type: "In-Person", condition: "Pediatric Checkup", status: "Upcoming", notes: "Annual physical for school." }
-      ];
-      setAppointments(mockApts);
-      setSelectedApt(mockApts[0].id);
+    } catch (err: any) {
+      console.error("API load today appointments error", err);
+      setError("Failed to load — please check your connection and try again.");
+      setAppointments([]);
     } finally {
       setLoading(false);
     }
@@ -102,7 +100,14 @@ export function TodayAppointmentsStat() {
         </div>
       </div>
 
-      {loading && appointments.length === 0 ? (
+      {error && appointments.length === 0 ? (
+        <div className="p-8 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-3xl text-center">
+          <p className="text-sm font-bold text-red-600 dark:text-red-400 mb-4">{error}</p>
+          <button onClick={loadTodayAppointments} className="px-5 py-2.5 bg-red-600 text-white rounded-xl text-xs font-bold hover:bg-red-700">
+            Retry
+          </button>
+        </div>
+      ) : loading && appointments.length === 0 ? (
         <div className="py-12 flex justify-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#163CC7]" />
         </div>

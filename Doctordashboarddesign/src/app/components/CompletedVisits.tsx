@@ -11,10 +11,12 @@ export function CompletedVisits() {
   const [dateFilter, setDateFilter] = useState("all");
   const [visits, setVisits] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const doctorName = getDoctorDisplayName();
 
   async function loadCompletedVisits() {
     setLoading(true);
+    setError(null);
     try {
       const res = await api.get('/appointments?tab=completed');
       if (res.success && Array.isArray(res.appointments)) {
@@ -35,15 +37,10 @@ export function CompletedVisits() {
           setSelectedVisit(mapped[0].id);
         }
       }
-    } catch (err) {
-      console.warn("API completed appointments fetch error, using default mock", err);
-      const defaultMock = [
-        { id: 1, patientName: "John Smith", age: 45, date: "May 19, 2026", time: "09:00 AM", type: "In-Person", condition: "Hypertension Follow-up", doctor: doctorName, status: "Completed", notes: "Blood pressure stable. Continued current medication." },
-        { id: 2, patientName: "Emma Wilson", age: 32, date: "May 19, 2026", time: "10:30 AM", type: "Virtual", condition: "Diabetes Type 2", doctor: doctorName, status: "Completed", notes: "Reviewed recent blood sugar logs. Adjusted insulin dosage." },
-        { id: 3, patientName: "Michael Brown", age: 58, date: "May 18, 2026", time: "02:15 PM", type: "In-Person", condition: "Asthma Assessment", doctor: doctorName, status: "Completed", notes: "Prescribed new inhaler. Scheduled follow-up in 3 months." }
-      ];
-      setVisits(defaultMock);
-      setSelectedVisit(defaultMock[0].id);
+    } catch (err: any) {
+      console.error("API completed appointments fetch error", err);
+      setError("Failed to load — please check your connection and try again.");
+      setVisits([]);
     } finally {
       setLoading(false);
     }
@@ -74,7 +71,14 @@ export function CompletedVisits() {
         </div>
       </div>
 
-      {loading && visits.length === 0 ? (
+      {error && visits.length === 0 ? (
+        <div className="p-8 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-3xl text-center">
+          <p className="text-sm font-bold text-red-600 dark:text-red-400 mb-4">{error}</p>
+          <button onClick={loadCompletedVisits} className="px-5 py-2.5 bg-red-600 text-white rounded-xl text-xs font-bold hover:bg-red-700">
+            Retry
+          </button>
+        </div>
+      ) : loading && visits.length === 0 ? (
         <div className="py-12 flex justify-center items-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#163CC7]" />
         </div>

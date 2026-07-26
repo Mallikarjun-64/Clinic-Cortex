@@ -44,17 +44,9 @@ export function Inbox() {
         }
       }
     } catch (err: any) {
-      console.warn("API threads load warning", err);
-      // Mock fallback
-      const mockThreads = [
-        { id: 1, name: "John Smith", last: "Looking for medication update", time: "09:00 AM", online: true, avatar: "https://i.pravatar.cc/150?img=12" },
-        { id: 2, name: "Emma Wilson", last: "Can we move appointment?", time: "10:30 AM", online: false, avatar: "https://i.pravatar.cc/150?img=32" },
-        { id: 3, name: "Michael Brown", last: "Need lab results explanation", time: "11:00 AM", online: true, avatar: "https://i.pravatar.cc/150?img=45" }
-      ];
-      setThreads(mockThreads);
-      if (activeId === null) {
-        setActiveId(mockThreads[0].id);
-      }
+      console.error("API threads load error", err);
+      setError("Failed to load — please check your connection and try again.");
+      setThreads([]);
     } finally {
       if (!silent) setLoading(false);
     }
@@ -75,22 +67,9 @@ export function Inbox() {
         setActiveMessages(mapped);
       }
     } catch (err) {
-      console.warn("API messages fetch warning, using fallback mock", err);
-      const fallbackMock: Record<string | number, Message[]> = {
-        1: [
-          { id: 1, sender: "patient", text: "Hi Doctor, can I get a quick medication update?", time: "08:58 AM" },
-          { id: 2, sender: "doctor", text: "Sure John, your meds are stable; continue as prescribed.", time: "08:59 AM" },
-        ],
-        2: [
-          { id: 1, sender: "patient", text: "I need to move my 10:30 appointment to 11:30.", time: "10:05 AM" },
-          { id: 2, sender: "doctor", text: "Yes, I can move you to 11:30. Please confirm.", time: "10:07 AM" },
-        ],
-        3: [
-          { id: 1, sender: "patient", text: "Can you explain my lab results?", time: "10:58 AM" },
-          { id: 2, sender: "doctor", text: "Your kidney function is good and cholesterol is lowering.", time: "11:01 AM" },
-        ],
-      };
-      setActiveMessages(fallbackMock[threadId] || []);
+      console.error("API messages fetch error", err);
+      setError("Failed to load — please check your connection and try again.");
+      setActiveMessages([]);
     } finally {
       if (!silent) setLoading(false);
     }
@@ -155,8 +134,16 @@ export function Inbox() {
           </div>
           <input type="text" placeholder="Search Contact..." className="w-full bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-lg py-2 px-4 text-sm text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-[#163CC7]/20" />
         </div>
-        
-        {loading && threads.length === 0 ? (
+
+        {error && threads.length === 0 ? (
+          <div className="p-4 m-4 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-center">
+            <AlertCircle className="w-6 h-6 text-red-500 mx-auto mb-2" />
+            <p className="text-xs text-red-600 dark:text-red-400 font-semibold mb-3">{error}</p>
+            <button onClick={() => { setError(null); loadThreads(); }} className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-bold hover:bg-red-700">
+              Retry
+            </button>
+          </div>
+        ) : loading && threads.length === 0 ? (
           <div className="py-12 flex justify-center items-center">
             <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#163CC7]" />
           </div>

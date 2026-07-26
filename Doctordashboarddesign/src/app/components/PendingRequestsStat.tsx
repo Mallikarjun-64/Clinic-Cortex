@@ -10,9 +10,11 @@ export function PendingRequestsStat() {
   const [urgencyFilter, setUrgencyFilter] = useState("all");
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function loadPendingRequests() {
     setLoading(true);
+    setError(null);
     try {
       const res = await api.get('/consultations');
       if (res.success && Array.isArray(res.requests)) {
@@ -29,14 +31,10 @@ export function PendingRequestsStat() {
           setSelectedReq(mapped[0].id);
         }
       }
-    } catch (err) {
-      console.warn("API load consultation requests warning, using mock fallback", err);
-      const mockReqs = [
-        { id: "e6d5e744-42b7-4a0b-8d76-bc34407b8b23", patientName: "Ethan Hunt", requestTime: "10 mins ago", type: "Prescription Refill", urgency: "High", notes: "Out of Lisinopril. Need refill ASAP." },
-        { id: "e6d5e744-42b7-4a0b-8d76-bc34407b8b24", patientName: "Olivia Brown", requestTime: "1 hour ago", type: "Virtual Consult", urgency: "Medium", notes: "Requesting a quick chat about recent lab results." }
-      ];
-      setRequests(mockReqs);
-      setSelectedReq(mockReqs[0].id);
+    } catch (err: any) {
+      console.error("API load consultation requests error", err);
+      setError("Failed to load — please check your connection and try again.");
+      setRequests([]);
     } finally {
       setLoading(false);
     }
@@ -112,7 +110,14 @@ export function PendingRequestsStat() {
         </div>
       </div>
 
-      {loading && requests.length === 0 ? (
+      {error && requests.length === 0 ? (
+        <div className="p-8 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-3xl text-center">
+          <p className="text-sm font-bold text-red-600 dark:text-red-400 mb-4">{error}</p>
+          <button onClick={loadPendingRequests} className="px-5 py-2.5 bg-red-600 text-white rounded-xl text-xs font-bold hover:bg-red-700">
+            Retry
+          </button>
+        </div>
+      ) : loading && requests.length === 0 ? (
         <div className="py-12 flex justify-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#163CC7]" />
         </div>

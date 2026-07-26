@@ -7,13 +7,7 @@ export function Patients() {
   const [searchTerm, setSearchTerm] = useState("");
   const [conditionFilter, setConditionFilter] = useState("all");
 
-  const [patients, setPatients] = useState<any[]>([
-    { id: 1, name: "Meghna k Gunaga", age: 45, gender: "Male", lastVisit: "Mar 28, 2026", condition: "Hypertension", phone: "+1 234-567-8901", email: "john.smith@email.com", address: "123 Main St, City" },
-    { id: 2, name: "Emma Wilson", age: 32, gender: "Female", lastVisit: "Mar 30, 2026", condition: "Diabetes Type 2", phone: "+1 234-567-8902", email: "emma.wilson@email.com", address: "456 Oak Ave, City" },
-    { id: 3, name: "Michael Brown", age: 58, gender: "Male", lastVisit: "Apr 1, 2026", condition: "Asthma", phone: "+1 234-567-8903", email: "michael.brown@email.com", address: "789 Pine Rd, City" },
-    { id: 4, name: "Sarah Davis", age: 41, gender: "Female", lastVisit: "Mar 25, 2026", condition: "Migraine", phone: "+1 234-567-8904", email: "sarah.davis@email.com", address: "321 Elm St, City" },
-    { id: 5, name: "James Miller", age: 36, gender: "Male", lastVisit: "Apr 2, 2026", condition: "Back Pain", phone: "+1 234-567-8905", email: "james.miller@email.com", address: "654 Birch Ln, City" },
-  ]);
+  const [patients, setPatients] = useState<any[]>([]);
 
   useEffect(() => {
     async function loadPatients() {

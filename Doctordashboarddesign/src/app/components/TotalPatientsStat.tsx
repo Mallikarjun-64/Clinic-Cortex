@@ -10,9 +10,11 @@ export function TotalPatientsStat() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [patients, setPatients] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function loadPatients() {
     setLoading(true);
+    setError(null);
     try {
       const res = await api.get('/patients');
       if (res.success && Array.isArray(res.patients)) {
@@ -31,14 +33,10 @@ export function TotalPatientsStat() {
           setSelectedPatient(mapped[0].id);
         }
       }
-    } catch (err) {
-      console.warn("API load patients error in Stats, using fallback mock", err);
-      const mockPatients = [
-        { id: 1, patientName: "Alice Johnson", age: 34, gender: "Female", lastVisit: "May 10, 2026", condition: "Routine Checkup", status: "Active", notes: "Patient is healthy. Next checkup in 12 months." },
-        { id: 2, patientName: "Robert Taylor", age: 52, gender: "Male", lastVisit: "May 12, 2026", condition: "Hypertension", status: "Active", notes: "Blood pressure is well controlled with medication." }
-      ];
-      setPatients(mockPatients);
-      setSelectedPatient(mockPatients[0].id);
+    } catch (err: any) {
+      console.error("API load patients error in Stats", err);
+      setError("Failed to load — please check your connection and try again.");
+      setPatients([]);
     } finally {
       setLoading(false);
     }
@@ -103,7 +101,14 @@ export function TotalPatientsStat() {
         </div>
       </div>
 
-      {loading && patients.length === 0 ? (
+      {error && patients.length === 0 ? (
+        <div className="p-8 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-3xl text-center">
+          <p className="text-sm font-bold text-red-600 dark:text-red-400 mb-4">{error}</p>
+          <button onClick={loadPatients} className="px-5 py-2.5 bg-red-600 text-white rounded-xl text-xs font-bold hover:bg-red-700">
+            Retry
+          </button>
+        </div>
+      ) : loading && patients.length === 0 ? (
         <div className="py-12 flex justify-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#163CC7]" />
         </div>

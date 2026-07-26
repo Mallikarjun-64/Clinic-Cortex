@@ -1,4 +1,5 @@
 import { ChangeEvent, useEffect, useState } from "react";
+import { AlertCircle } from "lucide-react";
 import { getDoctorDisplayName, getDoctorEmail, getStoredDoctorProfile } from "../lib/doctorProfile";
 import { api } from "../lib/api";
 
@@ -28,10 +29,12 @@ export function Settings() {
   const [passwords, setPasswords] = useState({ current: "", newPass: "", confirm: "" });
   const [preference, setPreference] = useState({ language: "English", timezone: "UTC-7", darkMode: false });
   const [loading, setLoading] = useState(false);
+  const [isOfflineFallback, setIsOfflineFallback] = useState(false);
 
   useEffect(() => {
     async function loadProfile() {
       setLoading(true);
+      setIsOfflineFallback(false);
       try {
         const res = await api.get('/doctors/profile');
         if (res.success && res.profile) {
@@ -51,6 +54,7 @@ export function Settings() {
         console.warn("Could not load doctor profile from API, fallback to local storage", err);
         const stored = getStoredDoctorProfile();
         if (stored) {
+          setIsOfflineFallback(true);
           setProfile((prev) => ({
             ...prev,
             firstName: stored.firstName || prev.firstName,
@@ -217,6 +221,12 @@ export function Settings() {
           <div className="col-span-12 lg:col-span-9">
             {activeTab === "editProfile" && (
               <div className="space-y-6">
+                {isOfflineFallback && (
+                  <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-sm font-semibold flex items-center gap-2">
+                    <AlertCircle size={18} className="text-amber-600 dark:text-amber-400 flex-shrink-0" />
+                    <span>Showing your last saved profile — couldn't reach the server to refresh.</span>
+                  </div>
+                )}
                 <h3 className="text-xl font-semibold text-slate-900 dark:text-white">Edit Profile</h3>
                 <div className="grid grid-cols-2 gap-4">
                   <div>

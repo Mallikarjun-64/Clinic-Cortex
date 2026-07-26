@@ -35,18 +35,10 @@ export function HomeVisits() {
         setScheduledVisits(mapped.filter((a: any) => ['Confirmed', 'En Route', 'In Progress'].includes(a.status)));
       }
     } catch (err: any) {
-      console.warn("API home visits fetch error, using fallbacks", err);
-      // fallback mock values
-      const mockRequests = [
-        { id: 1, patient: "David Martinez", age: 67, address: "123 Oak Street, Downtown", symptoms: "Chest pain, shortness of breath", requestedTime: "Today, 4:00 PM", distance: "2.3 km", priority: "High", phone: "+1 234-567-8901", notes: "Patient has history of cardiac issues", status: "Scheduled" },
-        { id: 2, patient: "Jennifer Lee", age: 54, address: "456 Maple Avenue, Suburbs", symptoms: "High fever, body aches", requestedTime: "Tomorrow, 10:00 AM", distance: "5.1 km", priority: "Medium", phone: "+1 234-567-8902", notes: "Flu-like symptoms for 2 days", status: "Scheduled" }
-      ];
-      const mockScheduled = [
-        { id: 3, patient: "Robert Smith", address: "555 Birch Lane", time: "Today, 2:00 PM", status: "En Route" },
-        { id: 4, patient: "Linda Brown", address: "888 Cedar Ave", time: "Tomorrow, 9:00 AM", status: "Scheduled" }
-      ];
-      setRequests(mockRequests);
-      setScheduledVisits(mockScheduled);
+      console.error("API home visits fetch error", err);
+      setError("Failed to load — please check your connection and try again.");
+      setRequests([]);
+      setScheduledVisits([]);
     } finally {
       setLoading(false);
     }
@@ -80,9 +72,11 @@ export function HomeVisits() {
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#163CC7]" />
         </div>
       ) : error ? (
-        <div className="p-4 rounded-xl bg-red-50 text-red-600 flex items-center gap-2 text-sm font-semibold">
-          <AlertCircle size={18} />
-          <span>{error}</span>
+        <div className="p-8 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-3xl text-center">
+          <p className="text-sm font-bold text-red-600 dark:text-red-400 mb-4">{error}</p>
+          <button onClick={loadHomeVisits} className="px-5 py-2.5 bg-red-600 text-white rounded-xl text-xs font-bold hover:bg-red-700">
+            Retry
+          </button>
         </div>
       ) : (
         <>

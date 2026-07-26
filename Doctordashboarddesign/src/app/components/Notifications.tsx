@@ -38,13 +38,9 @@ export function Notifications() {
         setNotifications(mapped);
       }
     } catch (err: any) {
-      console.warn("API notifications load error, using fallbacks", err);
-      setNotifications([
-        { id: 1, title: "Appointment Confirmed", body: "Consultation for John Smith at 09:00 AM is confirmed.", time: "5m ago", type: "success", patient: "John Smith", category: "Appointment", is_read: false },
-        { id: 2, title: "New Message", body: "Emma Wilson sent a message regarding her recent prescription.", time: "12m ago", type: "info", patient: "Emma Wilson", category: "Inbox", is_read: false },
-        { id: 3, title: "Prescription Review", body: "Dr. Lee requested a secondary review for Maria Garcia's medication.", time: "30m ago", type: "warning", patient: "Maria Garcia", category: "Review", is_read: false },
-        { id: 4, title: "Overdue Follow-up", body: "James Miller has missed his post-surgery follow-up by 2 days.", time: "1h ago", type: "danger", patient: "James Miller", category: "Urgent", is_read: false },
-      ]);
+      console.error("API notifications load error", err);
+      setError("Failed to load — please check your connection and try again.");
+      setNotifications([]);
     } finally {
       setLoading(false);
     }
@@ -89,7 +85,15 @@ export function Notifications() {
         </div>
       </div>
 
-      {loading && notifications.length === 0 ? (
+      {error && notifications.length === 0 ? (
+        <div className="p-8 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-3xl text-center">
+          <AlertCircle size={32} className="text-red-500 mx-auto mb-3" />
+          <p className="text-sm font-bold text-red-600 dark:text-red-400 mb-4">{error}</p>
+          <button onClick={loadNotifications} className="px-5 py-2.5 bg-red-600 text-white rounded-xl text-xs font-bold hover:bg-red-700">
+            Retry
+          </button>
+        </div>
+      ) : loading && notifications.length === 0 ? (
         <div className="py-12 flex justify-center items-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#163CC7]" />
         </div>
