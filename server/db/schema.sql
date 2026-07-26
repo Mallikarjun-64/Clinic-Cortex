@@ -334,3 +334,17 @@ CREATE INDEX IF NOT EXISTS idx_pharmacy_orders_patient ON pharmacy_orders(patien
 CREATE INDEX IF NOT EXISTS idx_wallet_transactions_patient ON wallet_transactions(patient_id);
 CREATE INDEX IF NOT EXISTS idx_ai_results_patient ON ai_analysis_results(patient_id);
 
+-- ============================================
+-- 17. PATIENT FEEDBACK
+-- ============================================
+CREATE TABLE IF NOT EXISTS patient_feedback (
+    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    patient_id  UUID REFERENCES patients(id) ON DELETE CASCADE,
+    rating      INT NOT NULL CHECK (rating >= 1 AND rating <= 5),
+    comments    TEXT,
+    created_at  TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_patient_feedback_patient ON patient_feedback(patient_id);
+
+

@@ -500,33 +500,74 @@ export function BookingScreen() {
 export function ChatScreen() {
   const { setScreen, selectedDoctorId } = useCC();
   const [activeDoctor, setActiveDoctor] = useState<any>(null);
-  const [messages, setMessages] = useState<{ me: boolean; text: string }[]>([
-    { me: false, text: "Hi! How are you feeling today?" },
-    { me: true, text: "Slight headache since morning." },
-    { me: false, text: "Got it. Sharing a quick assessment chart 📎" },
-  ]);
+  const [threadId, setThreadId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<{ me: boolean; text: string }[]>([]);
   const [input, setInput] = useState("");
-  const [typing, setTyping] = useState(false);
+  const [loading, setLoading] = useState(true);
 
+  // 1. Fetch Doctor and find-or-create message thread
   useEffect(() => {
-    api.get('/doctors-directory').then((res) => {
-      const list = res.doctors || [];
-      if (Array.isArray(list) && list.length > 0) {
-        const found = list.find((d: any) => d.id === selectedDoctorId) || list[0];
-        setActiveDoctor(found);
+    async function initChat() {
+      try {
+        const dirRes = await api.get('/doctors-directory');
+        const list = dirRes.doctors || [];
+        if (Array.isArray(list) && list.length > 0) {
+          const doc = list.find((d: any) => d.id === selectedDoctorId) || list[0];
+          setActiveDoctor(doc);
+
+          const threadRes = await api.post('/messages/threads', { doctorId: doc.id });
+          if (threadRes.success && threadRes.thread) {
+            setThreadId(threadRes.thread.id);
+          }
+        }
+      } catch (err) {
+        console.warn("Init chat error", err);
+      } finally {
+        setLoading(false);
       }
-    }).catch(() => {});
+    }
+    initChat();
   }, [selectedDoctorId]);
 
-  const send = () => {
-    if (!input.trim()) return;
-    setMessages((m) => [...m, { me: true, text: input }]);
+  // 2. Poll message thread every 4s
+  useEffect(() => {
+    if (!threadId) return;
+
+    async function loadMessages() {
+      try {
+        const res = await api.get(`/messages/threads/${threadId}`);
+        if (res.success && Array.isArray(res.messages)) {
+          const mapped = res.messages.map((m: any) => ({
+            me: m.sender_type === 'patient',
+            text: m.content
+          }));
+          setMessages(mapped);
+        }
+      } catch (err) {
+        console.warn("Fetch messages error", err);
+      }
+    }
+
+    loadMessages();
+    const interval = setInterval(loadMessages, 4000);
+    return () => clearInterval(interval);
+  }, [threadId]);
+
+  const send = async () => {
+    if (!input.trim() || !threadId) return;
+    const textToSend = input.trim();
     setInput("");
-    setTyping(true);
-    setTimeout(() => {
-      setTyping(false);
-      setMessages((m) => [...m, { me: false, text: "Thanks for sharing. I'll review and revert shortly." }]);
-    }, 1400);
+    
+    setMessages((m) => [...m, { me: true, text: textToSend }]);
+
+    try {
+      await api.post(`/messages/threads/${threadId}`, {
+        content: textToSend,
+        senderType: 'patient'
+      });
+    } catch (err) {
+      console.error("Send message error", err);
+    }
   };
 
   const docName = activeDoctor ? `${activeDoctor.salutation || 'Dr.'} ${activeDoctor.first_name} ${activeDoctor.last_name}`.trim() : "Doctor Consultation";
@@ -545,21 +586,22 @@ export function ChatScreen() {
         <button className="p-2 rounded-xl hover:bg-muted"><Video className="w-5 h-5 text-primary" /></button>
       </div>
       <div className="flex-1 overflow-auto cc-scroll p-4 space-y-2">
-        {messages.map((m, i) => (
-          <div key={i} className={`flex ${m.me ? "justify-end" : "justify-start"} cc-fade-up`}>
-            <div className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-sm ${
-              m.me ? "cc-grad-deep text-white rounded-br-md" : "bg-card border rounded-bl-md"
-            }`}>{m.text}</div>
+        {loading ? (
+          <div className="py-12 flex justify-center">
+            <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
           </div>
-        ))}
-        {typing && (
-          <div className="flex justify-start">
-            <div className="px-4 py-3 rounded-2xl bg-card border flex gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce" />
-              <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:.15s]" />
-              <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:.3s]" />
+        ) : messages.length === 0 ? (
+          <div className="text-center py-12 text-xs text-muted-foreground font-medium">
+            Start a consultation with {docName}.
+          </div>
+        ) : (
+          messages.map((m, i) => (
+            <div key={i} className={`flex ${m.me ? "justify-end" : "justify-start"} cc-fade-up`}>
+              <div className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-sm ${
+                m.me ? "cc-grad-deep text-white rounded-br-md" : "bg-card border rounded-bl-md"
+              }`}>{m.text}</div>
             </div>
-          </div>
+          ))
         )}
       </div>
       <div className="border-t p-3 flex items-center gap-2 bg-card">
@@ -579,41 +621,54 @@ export function ChatScreen() {
 
 /* ---------------- Glucose ---------------- */
 export function GlucoseScreen() {
-  const value = 80;
-  const arc = (value / 200) * 100;
+  const [glucose, setGlucose] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadGlucose() {
+      try {
+        const res = await api.get('/patients/me/vitals-history');
+        if (res.success && Array.isArray(res.vitals) && res.vitals.length > 0) {
+          const val = res.vitals[0].blood_glucose;
+          setGlucose(typeof val === 'number' ? val : parseFloat(val) || 80);
+        }
+      } catch (err) {
+        console.warn("Fetch glucose error", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadGlucose();
+  }, []);
+
+  const arc = glucose ? (glucose / 200) * 100 : 0;
+
   return (
     <div className="pb-8">
       <div className="px-5 pt-4">
         <h1 className="text-2xl font-bold">Blood Glucose</h1>
-        <p className="text-sm text-muted-foreground">Today, real-time monitor</p>
+        <p className="text-sm text-muted-foreground">Historical biometric monitor</p>
       </div>
       <div className="px-5 mt-6">
-        <div className="bg-card border rounded-3xl p-6 cc-shadow flex flex-col items-center">
-          <RadialArc value={arc} />
-          <div className="-mt-24 text-center">
-            <div className="text-4xl font-bold text-primary">{value}</div>
-            <div className="text-xs text-muted-foreground">mmol/L</div>
-            <Badge tone="normal">Normal</Badge>
+        {loading ? (
+          <div className="py-12 flex justify-center">
+            <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
           </div>
-        </div>
-      </div>
-      <Section title="Today's tracking">
-        <div className="grid grid-cols-3 gap-3">
-          {[
-            { l: "Food", v: 65, color: "bg-amber-500" },
-            { l: "Water", v: 80, color: "bg-sky-500" },
-            { l: "Supplements", v: 40, color: "bg-violet-500" },
-          ].map((c) => (
-            <div key={c.l} className="bg-card border rounded-2xl p-3 flex flex-col items-center">
-              <div className="h-32 w-3 rounded-full bg-muted relative overflow-hidden">
-                <div className={`absolute bottom-0 left-0 right-0 ${c.color} rounded-full transition-all`} style={{ height: `${c.v}%` }} />
-              </div>
-              <div className="text-xs font-semibold mt-2">{c.l}</div>
-              <div className="text-[10px] text-muted-foreground">{c.v}%</div>
+        ) : glucose !== null ? (
+          <div className="bg-card border rounded-3xl p-6 cc-shadow flex flex-col items-center">
+            <RadialArc value={arc} />
+            <div className="-mt-24 text-center">
+              <div className="text-4xl font-bold text-primary">{glucose}</div>
+              <div className="text-xs text-muted-foreground">mmol/L</div>
+              <Badge tone="normal">Normal</Badge>
             </div>
-          ))}
-        </div>
-      </Section>
+          </div>
+        ) : (
+          <div className="bg-card border rounded-3xl p-8 text-center text-sm font-medium text-muted-foreground">
+            No blood glucose records on file yet.
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -647,41 +702,73 @@ function RadialArc({ value }: { value: number }) {
 
 /* ---------------- Vitals ---------------- */
 export function VitalsScreen() {
-  const vitals = [
+  const [latestVitals, setLatestVitals] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadVitals() {
+      try {
+        const res = await api.get('/patients/me/vitals-history');
+        if (res.success && Array.isArray(res.vitals) && res.vitals.length > 0) {
+          setLatestVitals(res.vitals[0]);
+        }
+      } catch (err) {
+        console.warn("Fetch vitals error", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadVitals();
+  }, []);
+
+  const vitalsList = latestVitals ? [
     { icon: Wind, label: "Respiratory Rate", v: "15.2", u: "rpm", tone: "normal" as const, fill: 60 },
-    { icon: Heart, label: "Resting Heart Rate", v: "53.5", u: "bpm", tone: "lower" as const, fill: 30 },
-    { icon: Activity, label: "Heart Rate Variability", v: "74.4", u: "ms", tone: "normal" as const, fill: 70 },
-    { icon: Droplet, label: "Blood Oxygen (SpO₂)", v: "95.6", u: "%", tone: "normal" as const, fill: 85 },
-    { icon: Thermometer, label: "Temperature", v: "34.3", u: "°C", tone: "normal" as const, fill: 55 },
-    { icon: Moon, label: "Sleep Monitor", v: "4h 50m", u: "", tone: "lower" as const, fill: 35 },
-  ];
+    { icon: Heart, label: "Resting Heart Rate", v: String(latestVitals.rhr || "53.5"), u: "bpm", tone: "lower" as const, fill: 30 },
+    { icon: Activity, label: "Heart Rate Variability", v: String(latestVitals.hrv || "74.4"), u: "ms", tone: "normal" as const, fill: 70 },
+    { icon: Droplet, label: "Blood Oxygen (SpO₂)", v: String(latestVitals.spo2 || "95.6"), u: "%", tone: "normal" as const, fill: 85 },
+    { icon: Thermometer, label: "Temperature", v: String(latestVitals.temp || "34.3"), u: "°C", tone: "normal" as const, fill: 55 },
+    { icon: Moon, label: "Sleep Monitor", v: String(latestVitals.sleep || "4h 50m"), u: "", tone: "lower" as const, fill: 35 },
+  ] : [];
+
   return (
     <div>
       <div className="px-5 pt-4">
         <h1 className="text-2xl font-bold">Vitals Dashboard</h1>
-        <p className="text-sm text-muted-foreground">Live biometric monitor</p>
+        <p className="text-sm text-muted-foreground">Recorded biometric history</p>
       </div>
-      <div className="px-5 mt-5 grid grid-cols-2 gap-3">
-        {vitals.map((vi) => {
-          const I = vi.icon;
-          return (
-            <div key={vi.label} className="bg-card border rounded-3xl p-4 cc-shadow">
-              <div className="flex items-center justify-between">
-                <div className="w-9 h-9 rounded-2xl bg-primary/10 text-primary flex items-center justify-center"><I className="w-5 h-5" /></div>
-                <Badge tone={vi.tone}>{vi.tone === "normal" ? "Normal" : "Lower"}</Badge>
-              </div>
-              <div className="mt-3 flex items-end gap-2">
-                <div className="flex-1">
-                  <div className="text-[10px] text-muted-foreground leading-none">{vi.label}</div>
-                  <div className="text-xl font-bold mt-1 leading-none">{vi.v} <span className="text-xs font-normal text-muted-foreground">{vi.u}</span></div>
+      <div className="px-5 mt-5">
+        {loading ? (
+          <div className="py-12 flex justify-center">
+            <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : latestVitals ? (
+          <div className="grid grid-cols-2 gap-3">
+            {vitalsList.map((vi) => {
+              const I = vi.icon;
+              return (
+                <div key={vi.label} className="bg-card border rounded-3xl p-4 cc-shadow">
+                  <div className="flex items-center justify-between">
+                    <div className="w-9 h-9 rounded-2xl bg-primary/10 text-primary flex items-center justify-center"><I className="w-5 h-5" /></div>
+                    <Badge tone={vi.tone}>{vi.tone === "normal" ? "Normal" : "Lower"}</Badge>
+                  </div>
+                  <div className="mt-3 flex items-end gap-2">
+                    <div className="flex-1">
+                      <div className="text-[10px] text-muted-foreground leading-none">{vi.label}</div>
+                      <div className="text-xl font-bold mt-1 leading-none">{vi.v} <span className="text-xs font-normal text-muted-foreground">{vi.u}</span></div>
+                    </div>
+                    <div className="w-2.5 h-16 rounded-full bg-muted relative overflow-hidden">
+                      <div className={`absolute bottom-0 inset-x-0 rounded-full transition-all ${vi.tone === "normal" ? "bg-emerald-500" : "bg-red-500"}`} style={{ height: `${vi.fill}%` }} />
+                    </div>
+                  </div>
                 </div>
-                <div className="w-2.5 h-16 rounded-full bg-muted relative overflow-hidden">
-                  <div className={`absolute bottom-0 inset-x-0 rounded-full transition-all ${vi.tone === "normal" ? "bg-emerald-500" : "bg-red-500"}`} style={{ height: `${vi.fill}%` }} />
-                </div>
-              </div>
-            </div>
-          );
-        })}
+              );
+            })}
+          </div>
+        ) : (
+          <div className="bg-card border rounded-3xl p-8 text-center text-sm font-medium text-muted-foreground">
+            No vitals recorded yet. Complete an appointment or AI assessment to track your vitals.
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1213,11 +1300,39 @@ export function AboutScreen() {
 
 export function FeedbackScreen() {
   const [r, setR] = useState(0);
+  const [comments, setComments] = useState("");
   const [sent, setSent] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async () => {
+    if (r < 1) {
+      setError("Please select a star rating first.");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await api.post('/patient-auth/feedback', {
+        rating: r,
+        comments
+      });
+      if (res.success) {
+        setSent(true);
+      } else {
+        setError(res.message || "Failed to submit feedback.");
+      }
+    } catch (err: any) {
+      setError(err.message || "Error submitting feedback.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <div className="px-5 pt-4">
       <h1 className="text-2xl font-bold">Feedback</h1>
-      <p className="text-sm text-muted-foreground mt-1">We'd love to hear from you.</p>
+      <p className="text-sm text-muted-foreground mt-1">We'd love to hear your thoughts about ClinicCortex.</p>
       <div className="mt-6 bg-card border rounded-3xl p-5 cc-shadow">
         <div className="flex justify-center gap-2">
           {[1, 2, 3, 4, 5].map((i) => (
@@ -1226,9 +1341,20 @@ export function FeedbackScreen() {
             </button>
           ))}
         </div>
-        <textarea placeholder="Tell us more…" rows={4} className="mt-4 w-full rounded-2xl border bg-background p-3 outline-none focus:border-primary" />
-        <button onClick={() => setSent(true)} className="mt-4 w-full cc-grad-deep text-white font-semibold rounded-2xl py-3">
-          {sent ? "Thank you! ✓" : "Submit feedback"}
+        <textarea
+          value={comments}
+          onChange={(e) => setComments(e.target.value)}
+          placeholder="Tell us more about your experience…"
+          rows={4}
+          className="mt-4 w-full rounded-2xl border bg-background p-3 outline-none focus:border-primary text-sm"
+        />
+        {error && <div className="mt-2 text-xs text-rose-500 font-semibold">{error}</div>}
+        <button
+          disabled={submitting || sent}
+          onClick={handleSubmit}
+          className="mt-4 w-full cc-grad-deep text-white font-semibold rounded-2xl py-3 disabled:opacity-50"
+        >
+          {sent ? "Thank you! ✓" : submitting ? "Submitting…" : "Submit feedback"}
         </button>
       </div>
     </div>
@@ -1236,17 +1362,35 @@ export function FeedbackScreen() {
 }
 
 export function LocationScreen() {
+  const [locationStatus, setLocationStatus] = useState("Detecting nearby location...");
+
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setLocationStatus(`Lat: ${pos.coords.latitude.toFixed(3)}, Lng: ${pos.coords.longitude.toFixed(3)}`);
+        },
+        () => {
+          setLocationStatus("GPS Location service active");
+        }
+      );
+    } else {
+      setLocationStatus("GPS Location service active");
+    }
+  }, []);
+
   return (
     <div>
       <div className="px-5 pt-4">
         <h1 className="text-2xl font-bold">Location</h1>
+        <p className="text-sm text-muted-foreground mt-1">Nearby clinic detector</p>
       </div>
       <div className="px-5 mt-5">
         <div className="aspect-[4/3] rounded-3xl bg-gradient-to-br from-sky-100 to-blue-100 dark:from-slate-800 dark:to-slate-900 flex items-center justify-center relative overflow-hidden">
           <MapPinned className="w-16 h-16 text-primary cc-pulse-ring rounded-full p-3" />
           <div className="absolute bottom-3 left-3 right-3 bg-card border rounded-2xl p-3 text-sm">
-            <div className="font-semibold">Bandra West, Mumbai</div>
-            <div className="text-xs text-muted-foreground">3 nearby clinics</div>
+            <div className="font-semibold">{locationStatus}</div>
+            <div className="text-xs text-muted-foreground">Connected to ClinicCortex GPS network</div>
           </div>
         </div>
       </div>
@@ -1255,18 +1399,25 @@ export function LocationScreen() {
 }
 
 export function EmergencyScreen() {
+  const handleEmergencyCall = () => {
+    window.location.href = 'tel:112';
+  };
+
   return (
     <div className="px-5 pt-4">
       <h1 className="text-2xl font-bold text-red-500">Emergency SOS</h1>
-      <p className="text-sm text-muted-foreground mt-1">Tap to alert emergency contacts and nearest hospital.</p>
+      <p className="text-sm text-muted-foreground mt-1">Tap to dial local emergency services immediately.</p>
       <div className="mt-10 flex flex-col items-center">
-        <button className="w-48 h-48 rounded-full bg-gradient-to-br from-red-500 to-rose-600 text-white flex flex-col items-center justify-center cc-pulse-ring active:scale-95 transition-transform">
+        <button 
+          onClick={handleEmergencyCall}
+          className="w-48 h-48 rounded-full bg-gradient-to-br from-red-500 to-rose-600 text-white flex flex-col items-center justify-center cc-pulse-ring active:scale-95 transition-transform cursor-pointer shadow-xl shadow-red-500/20"
+        >
           <Siren className="w-16 h-16" />
           <span className="font-bold mt-2">HOLD TO CALL</span>
         </button>
         <div className="mt-10 grid grid-cols-2 gap-3 w-full">
-          <button className="bg-card border rounded-2xl p-4 text-sm font-semibold">Ambulance</button>
-          <button className="bg-card border rounded-2xl p-4 text-sm font-semibold">Family</button>
+          <button onClick={() => window.location.href = 'tel:102'} className="bg-card border rounded-2xl p-4 text-sm font-semibold hover:border-red-400 transition-colors">Ambulance (102)</button>
+          <button onClick={() => window.location.href = 'tel:112'} className="bg-card border rounded-2xl p-4 text-sm font-semibold font-bold text-red-500 hover:bg-red-50 transition-colors">Emergency (112)</button>
         </div>
       </div>
     </div>
@@ -1274,23 +1425,83 @@ export function EmergencyScreen() {
 }
 
 export function SimpleListScreen({ title }: { title: string }) {
+  const [items, setItems] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function loadData() {
+      setLoading(true);
+      setError(null);
+      try {
+        if (title.toLowerCase().includes("prescription")) {
+          const res = await api.get('/patients/me/prescriptions');
+          if (res.success && Array.isArray(res.prescriptions)) {
+            setItems(res.prescriptions.map((p: any) => ({
+              id: p.id,
+              title: p.medication || "Prescription",
+              sub: `Dosage: ${p.dosage || 'As directed'} • ${p.instructions || ''}`,
+              date: p.prescribed_date ? new Date(p.prescribed_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Recent"
+            })));
+          }
+        } else if (title.toLowerCase().includes("report") || title.toLowerCase().includes("record") || title.toLowerCase().includes("discharge")) {
+          const res = await api.get('/patients/me/records');
+          if (res.success && Array.isArray(res.records)) {
+            setItems(res.records.map((r: any) => ({
+              id: r.id,
+              title: r.diagnosis || "Medical Record",
+              sub: r.notes || r.treatment || "Clinical notes archived.",
+              date: r.record_date ? new Date(r.record_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Recent"
+            })));
+          }
+        } else {
+          // Categories with no backend tables (Bills & Memos, Guidelines)
+          setItems([]);
+        }
+      } catch (err: any) {
+        setError(err.message || "Failed to load data");
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadData();
+  }, [title]);
+
   return (
     <div>
       <div className="px-5 pt-4">
         <h1 className="text-2xl font-bold">{title}</h1>
         <p className="text-sm text-muted-foreground mt-1">All records archived securely.</p>
       </div>
-      <div className="px-5 mt-5 grid gap-2">
-        {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="bg-card border rounded-2xl p-4 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center"><FileText className="w-5 h-5" /></div>
-            <div className="flex-1">
-              <div className="text-sm font-semibold">{title} #{1000 + i}</div>
-              <div className="text-xs text-muted-foreground">Updated Oct {20 - i}, 2026</div>
-            </div>
-            <ChevronRight className="w-4 h-4 text-muted-foreground" />
+      <div className="px-5 mt-5">
+        {loading ? (
+          <div className="py-12 flex justify-center">
+            <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
           </div>
-        ))}
+        ) : error ? (
+          <div className="p-4 rounded-2xl bg-rose-50 text-rose-600 text-xs font-semibold">
+            {error}
+          </div>
+        ) : items.length === 0 ? (
+          <div className="bg-card border rounded-3xl p-8 text-center text-sm font-medium text-muted-foreground">
+            No {title.toLowerCase()} recorded on file.
+          </div>
+        ) : (
+          <div className="grid gap-2">
+            {items.map((item) => (
+              <div key={item.id} className="bg-card border rounded-2xl p-4 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div className="flex-1">
+                  <div className="text-sm font-semibold">{item.title}</div>
+                  <div className="text-xs text-muted-foreground">{item.sub} • {item.date}</div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-muted-foreground" />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -161,4 +161,42 @@ router.get('/me', authenticatePatientToken, async (req, res) => {
   }
 });
 
+// @route   POST /api/patient-auth/feedback
+// @desc    Submit feedback/rating from logged in patient
+router.post('/feedback', authenticatePatientToken, async (req, res) => {
+  const { rating, comments } = req.body;
+  
+  if (!rating || rating < 1 || rating > 5) {
+    return res.status(400).json({ success: false, message: 'Rating must be a number between 1 and 5' });
+  }
+
+  try {
+    await query(`
+      CREATE TABLE IF NOT EXISTS patient_feedback (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        patient_id UUID REFERENCES patients(id) ON DELETE CASCADE,
+        rating INT NOT NULL CHECK (rating >= 1 AND rating <= 5),
+        comments TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
+    const result = await query(
+      `INSERT INTO patient_feedback (patient_id, rating, comments)
+       VALUES ($1, $2, $3)
+       RETURNING *`,
+      [req.patient.id, rating, comments || null]
+    );
+
+    res.status(201).json({
+      success: true,
+      message: 'Feedback submitted successfully',
+      feedback: result.rows[0]
+    });
+  } catch (err) {
+    console.error('Submit Feedback Error:', err);
+    res.status(500).json({ success: false, message: 'Server error submitting feedback' });
+  }
+});
+
 export default router;
