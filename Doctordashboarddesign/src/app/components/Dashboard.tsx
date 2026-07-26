@@ -31,23 +31,14 @@ export function Dashboard() {
 
   // --- STATE DATA FROM BACKEND ---
   const [liveStats, setLiveStats] = useState({
-    totalPatients: 1234,
-    todayAppointments: 18,
-    pendingRequests: 7,
-    completedVisits: 45
+    totalPatients: 0,
+    todayAppointments: 0,
+    pendingRequests: 0,
+    completedVisits: 0
   });
 
   const [consultationRequests, setConsultationRequests] = useState<any[]>([]);
-
-  const [appointmentStats, setAppointmentStats] = useState([
-    { day: "Mon", Success: 18 },
-    { day: "Tue", Success: 22 },
-    { day: "Wed", Success: 19 },
-    { day: "Thu", Success: 24 },
-    { day: "Fri", Success: 28 },
-    { day: "Sat", Success: 14 },
-    { day: "Sun", Success: 16 },
-  ]);
+  const [appointmentStats, setAppointmentStats] = useState<any[]>([]);
 
   useEffect(() => {
     async function loadDashboardData() {
@@ -58,8 +49,10 @@ export function Dashboard() {
         }
 
         const chartRes = await api.get('/dashboard/chart');
-        if (chartRes.success && Array.isArray(chartRes.chartData) && chartRes.chartData.length > 0) {
+        if (chartRes.success && Array.isArray(chartRes.chartData)) {
           setAppointmentStats(chartRes.chartData.map((d: any) => ({ day: d.name, Success: d.Completed })));
+        } else {
+          setAppointmentStats([]);
         }
 
         const consultRes = await api.get('/consultations');
@@ -80,10 +73,10 @@ export function Dashboard() {
   }, []);
 
   const stats = [
-    { label: "Total Patients", value: liveStats.totalPatients.toLocaleString(), icon: Users, color: "from-blue-500 to-blue-600", path: "/dashboard/stats/total-patients", change: "+12%" },
-    { label: "Today's Appointments", value: liveStats.todayAppointments.toString(), icon: Calendar, color: "from-[#163CC7] to-[#4F6FE5]", path: "/dashboard/stats/today", change: "+3" },
-    { label: "Pending Requests", value: liveStats.pendingRequests.toString(), icon: Clock, color: "from-amber-500 to-orange-600", path: "/dashboard/stats/pending", change: "+2" },
-    { label: "Completed Visits", value: liveStats.completedVisits.toString(), icon: Activity, color: "from-green-500 to-emerald-600", path: "/dashboard/stats/completed", change: "+8" },
+    { label: "Total Patients", value: liveStats.totalPatients.toLocaleString(), icon: Users, color: "from-blue-500 to-blue-600", path: "/dashboard/stats/total-patients" },
+    { label: "Today's Appointments", value: liveStats.todayAppointments.toString(), icon: Calendar, color: "from-[#163CC7] to-[#4F6FE5]", path: "/dashboard/stats/today" },
+    { label: "Pending Requests", value: liveStats.pendingRequests.toString(), icon: Clock, color: "from-amber-500 to-orange-600", path: "/dashboard/stats/pending" },
+    { label: "Completed Visits", value: liveStats.completedVisits.toString(), icon: Activity, color: "from-green-500 to-emerald-600", path: "/dashboard/stats/completed" },
   ];
 
   // --- HANDLERS ---
@@ -128,10 +121,14 @@ export function Dashboard() {
     <div className="relative min-h-screen w-full bg-slate-50 dark:bg-slate-950 p-6">
       <div className="max-w-[1400px] mx-auto space-y-6">
 
-        {/* Page Header */}
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800 dark:text-white mb-1">Dashboard</h1>
-          <p className="text-slate-600 dark:text-slate-400">Welcome back, {getDoctorDisplayName()}</p>
+        {/* Page Header / Welcome Banner */}
+        <div className="bg-[#163CC7] rounded-xl p-8 text-white flex justify-between items-center relative overflow-hidden">
+          <div className="z-10">
+            <h2 className="text-2xl font-bold mb-2">Welcome back, {getDoctorDisplayName()}! 👋</h2>
+            <p className="text-blue-100 max-w-xl">
+              Here's what's happening with your practice today. You have {liveStats.todayAppointments} appointment{liveStats.todayAppointments === 1 ? '' : 's'} scheduled for today.
+            </p>
+          </div>
         </div>
 
         {/* Stats Grid */}
@@ -148,12 +145,9 @@ export function Dashboard() {
                   <div className={`w-12 h-12 rounded-lg bg-gradient-to-br ${stat.color} flex items-center justify-center text-white shadow-lg`}>
                     <Icon size={24} />
                   </div>
-                  <span className="text-xs font-medium px-2 py-1 rounded-full bg-green-50 dark:bg-green-900/20 text-green-600">
-                    {stat.change}
-                  </span>
                 </div>
                 <div className="text-3xl font-bold text-slate-800 dark:text-white">{stat.value}</div>
-                <div className="text-slate-500 dark:text-slate-400 group-hover:text-blue-500 transition-colors">
+                <div className="text-slate-500 dark:text-slate-400 group-hover:text-blue-500 transition-colors font-medium text-sm mt-1">
                   {stat.label}
                 </div>
               </div>
@@ -164,26 +158,32 @@ export function Dashboard() {
         {/* Appointment Performance Chart */}
         <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
           <h3 className="text-lg font-semibold mb-6 text-slate-800 dark:text-white">Appointment Performance</h3>
-          <div className="h-[300px] w-full">
-            <ChartContainer config={{}} className="h-full w-full">
-              <AreaChart data={appointmentStats}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="day" />
-                <YAxis />
-                <ChartTooltip />
-                <Area
-                  type="monotone"
-                  dataKey="Success"
-                  stroke="#3B82F6"
-                  fill="#3B82F6"
-                  fillOpacity={0.1}
-                  isAnimationActive={true}
-                  animationDuration={1500}
-                  animationEasing="ease-out"
-                />
-              </AreaChart>
-            </ChartContainer>
-          </div>
+          {appointmentStats.length === 0 ? (
+            <div className="h-[300px] w-full flex items-center justify-center text-slate-400 font-bold text-sm bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-dashed border-slate-200 dark:border-slate-800">
+              No appointment data for the last 7 days.
+            </div>
+          ) : (
+            <div className="h-[300px] w-full">
+              <ChartContainer config={{}} className="h-full w-full">
+                <AreaChart data={appointmentStats}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="day" />
+                  <YAxis />
+                  <ChartTooltip />
+                  <Area
+                    type="monotone"
+                    dataKey="Success"
+                    stroke="#3B82F6"
+                    fill="#3B82F6"
+                    fillOpacity={0.1}
+                    isAnimationActive={true}
+                    animationDuration={1500}
+                    animationEasing="ease-out"
+                  />
+                </AreaChart>
+              </ChartContainer>
+            </div>
+          )}
         </div>
 
         {/* Two-Column Layout */}

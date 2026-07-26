@@ -16,7 +16,7 @@ export function TotalPatientsStat() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get('/patients');
+      const res = await api.get('/patients/my-patients');
       if (res.success && Array.isArray(res.patients)) {
         const mapped = res.patients.map((p: any) => ({
           id: p.id,

@@ -38,6 +38,24 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
+// @route   GET /api/patients/my-patients
+// @desc    List patients assigned to/who have appointments with the logged-in doctor
+router.get('/my-patients', authenticateToken, async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT DISTINCT p.* FROM patients p
+       JOIN appointments a ON a.patient_id = p.id
+       WHERE a.doctor_id = $1
+       ORDER BY p.name ASC`,
+      [req.user.id]
+    );
+    res.status(200).json({ success: true, count: result.rows.length, patients: result.rows });
+  } catch (err) {
+    console.error('List My Patients Error:', err);
+    res.status(500).json({ success: false, message: 'Server error listing doctor patients' });
+  }
+});
+
 // @route   GET /api/patients/:id
 // @desc    Get detailed record of a single patient
 router.get('/:id', authenticateToken, async (req, res) => {

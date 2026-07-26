@@ -16,7 +16,8 @@ export function TodayAppointmentsStat() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get('/appointments?tab=upcoming');
+      const todayStr = new Date().toISOString().split('T')[0];
+      const res = await api.get(`/appointments?date=${todayStr}`);
       if (res.success && Array.isArray(res.appointments)) {
         const mapped = res.appointments.map((a: any) => ({
           id: a.id,
@@ -30,6 +31,8 @@ export function TodayAppointmentsStat() {
         setAppointments(mapped);
         if (mapped.length > 0) {
           setSelectedApt(mapped[0].id);
+        } else {
+          setSelectedApt(null);
         }
       }
     } catch (err: any) {
