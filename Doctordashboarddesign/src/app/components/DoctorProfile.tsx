@@ -67,7 +67,16 @@ export function DoctorProfile() {
     email: getDoctorEmail(),
     phone: "+1 234-567-8900",
     license: "MC-2015-45678",
-    photoUrl: aiAvatarImage
+    photoUrl: aiAvatarImage,
+    bio: "",
+    mbbsUniversity: "",
+    mbbsYear: "",
+    pgDegree: "",
+    pgSpecialization: "",
+    superSpecialization: "",
+    experienceYears: 0,
+    additionalCerts: "",
+    awards: [] as string[]
   });
 
   const [loading, setLoading] = useState(false);
@@ -84,7 +93,16 @@ export function DoctorProfile() {
           email: d.personal_email || d.email || "",
           phone: d.mobile || "+1 234-567-8900",
           license: d.nmc_reg_no || "MC-2015-45678",
-          photoUrl: d.photo_url || aiAvatarImage
+          photoUrl: d.photo_url || aiAvatarImage,
+          bio: d.bio || "",
+          mbbsUniversity: d.mbbs_university || "",
+          mbbsYear: d.mbbs_year || "",
+          pgDegree: d.pg_degree || "",
+          pgSpecialization: d.pg_specialization || "",
+          superSpecialization: d.super_specialization || "",
+          experienceYears: d.experience_years || 0,
+          additionalCerts: d.additional_certs || "",
+          awards: Array.isArray(d.awards) ? d.awards : typeof d.awards === 'string' ? [d.awards] : []
         });
       }
     } catch (err) {
@@ -339,7 +357,9 @@ export function DoctorProfile() {
               <div className="flex items-center gap-3 text-blue-600 dark:text-blue-400 mb-2">
                 <Briefcase size={18} /> <span className="text-xs font-black uppercase">Experience</span>
               </div>
-              <p className="text-3xl font-black text-blue-700 dark:text-blue-300">12 years</p>
+              <p className="text-3xl font-black text-blue-700 dark:text-blue-300">
+                {profile.experienceYears ? `${profile.experienceYears} years` : "0 years"}
+              </p>
             </div>
             <div className="bg-slate-50 dark:bg-slate-800/40 rounded-2xl p-6 border border-slate-100 dark:border-slate-800/80">
               <div className="flex items-center gap-3 text-slate-500 dark:text-slate-400 mb-2">
@@ -358,7 +378,7 @@ export function DoctorProfile() {
       </div>
 
       {/* --- STATS DASHBOARD --- */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm flex items-center justify-between">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 rounded-xl flex items-center justify-center"><TrendingUp /></div>
@@ -378,15 +398,6 @@ export function DoctorProfile() {
             </div>
           </div>
         </div>
-        <div className="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-blue-50 dark:bg-blue-950/30 text-[#163CC7] dark:text-[#4F6FE5] rounded-xl flex items-center justify-center"><MessageCircle /></div>
-            <div>
-              <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">Remarks</p>
-              <p className="text-xl font-black text-slate-800 dark:text-white">856</p>
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* --- EDUCATION & CERTIFICATIONS --- */}
@@ -396,23 +407,30 @@ export function DoctorProfile() {
             <GraduationCap className="text-[#163CC7] dark:text-[#4F6FE5]" size={24} />
             <h3 className="text-xl font-bold text-slate-800 dark:text-white">Education</h3>
           </div>
-          <div className="space-y-6">
-            <div className="pb-4 border-b border-slate-50 dark:border-slate-805 last:border-0">
-              <p className="font-bold text-slate-800 dark:text-slate-200">MD - Doctor of Medicine</p>
-              <p className="text-sm text-slate-500 dark:text-slate-400">Harvard Medical School</p>
-              <p className="text-xs text-slate-400 dark:text-slate-500 font-bold">2010</p>
+          {!profile.mbbsUniversity && !profile.pgDegree && !profile.superSpecialization ? (
+            <p className="text-slate-400 dark:text-slate-500 font-bold text-sm">No education details added yet — update your profile</p>
+          ) : (
+            <div className="space-y-6">
+              {profile.mbbsUniversity && (
+                <div className="pb-4 border-b border-slate-50 dark:border-slate-800 last:border-0">
+                  <p className="font-bold text-slate-800 dark:text-slate-200">MD - Doctor of Medicine</p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">{profile.mbbsUniversity}</p>
+                  {profile.mbbsYear && <p className="text-xs text-slate-400 dark:text-slate-500 font-bold">{profile.mbbsYear}</p>}
+                </div>
+              )}
+              {profile.pgDegree && (
+                <div className="pb-4 border-b border-slate-50 dark:border-slate-800 last:border-0">
+                  <p className="font-bold text-slate-800 dark:text-slate-200">{profile.pgDegree}</p>
+                  {profile.pgSpecialization && <p className="text-sm text-slate-500 dark:text-slate-400">{profile.pgSpecialization}</p>}
+                </div>
+              )}
+              {profile.superSpecialization && (
+                <div className="pb-4 border-b border-slate-50 dark:border-slate-800 last:border-0">
+                  <p className="font-bold text-slate-800 dark:text-slate-200">{profile.superSpecialization}</p>
+                </div>
+              )}
             </div>
-            <div className="pb-4 border-b border-slate-50 dark:border-slate-805 last:border-0">
-              <p className="font-bold text-slate-800 dark:text-slate-200">Cardiology Residency</p>
-              <p className="text-sm text-slate-500 dark:text-slate-400">Johns Hopkins Hospital</p>
-              <p className="text-xs text-slate-400 dark:text-slate-500 font-bold">2013</p>
-            </div>
-            <div>
-              <p className="font-bold text-slate-800 dark:text-slate-200">Fellowship in Interventional Cardiology</p>
-              <p className="text-sm text-slate-500 dark:text-slate-400">Mayo Clinic</p>
-              <p className="text-xs text-slate-400 dark:text-slate-500 font-bold">2015</p>
-            </div>
-          </div>
+          )}
         </div>
 
         <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 shadow-sm border border-slate-100 dark:border-slate-800">
@@ -420,38 +438,41 @@ export function DoctorProfile() {
             <Award className="text-[#163CC7] dark:text-[#4F6FE5]" size={24} />
             <h3 className="text-xl font-bold text-slate-800 dark:text-white">Certifications & Awards</h3>
           </div>
-          <div className="space-y-6">
-            <div className="pb-4 border-b border-slate-50 dark:border-slate-805 last:border-0">
-              <p className="font-bold text-slate-800 dark:text-slate-200">Board Certified - American Board of Internal Medicine</p>
-              <p className="text-xs text-slate-400 dark:text-slate-500 font-bold uppercase">Issued: 2013</p>
+          {!profile.additionalCerts && (!profile.awards || profile.awards.length === 0) ? (
+            <p className="text-slate-400 dark:text-slate-500 font-bold text-sm">No certifications or awards added yet.</p>
+          ) : (
+            <div className="space-y-6">
+              {profile.additionalCerts && (
+                <div className="pb-4 border-b border-slate-50 dark:border-slate-800 last:border-0">
+                  <p className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">Certifications</p>
+                  <div className="space-y-1 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                    {profile.additionalCerts.split('\n').filter(Boolean).map((cert, i) => (
+                      <p key={i}>{cert}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {profile.awards && profile.awards.length > 0 && (
+                <div>
+                  <p className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">Awards & Recognitions</p>
+                  <ul className="list-disc list-inside space-y-1 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                    {profile.awards.map((award, i) => (
+                      <li key={i}>{award}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
-            <div className="pb-4 border-b border-slate-50 dark:border-slate-805 last:border-0">
-              <p className="font-bold text-slate-800 dark:text-slate-200">Advanced Cardiac Life Support (ACLS)</p>
-              <p className="text-xs text-slate-400 dark:text-slate-500 font-bold uppercase">Issued: 2022</p>
-            </div>
-            <div>
-              <p className="font-bold text-slate-800 dark:text-slate-200">Echocardiography Certification</p>
-              <p className="text-xs text-slate-400 dark:text-slate-500 font-bold uppercase">Issued: 2021</p>
-            </div>
-          </div>
+          )}
         </div>
       </div>
 
       {/* --- ABOUT SECTION --- */}
       <div className="bg-white dark:bg-slate-900 rounded-3xl p-10 shadow-sm border border-slate-100 dark:border-slate-800">
         <h3 className="text-xl font-black text-slate-800 dark:text-white mb-6">About</h3>
-        <div className="space-y-4 text-slate-600 dark:text-slate-300 leading-relaxed text-sm font-medium">
-          <p>
-            Dr. Sarah Johnson is a board-certified cardiologist with over 12 years of experience in cardiovascular medicine. 
-            She specializes in interventional cardiology and has performed thousands of successful procedures. 
-            Dr. Johnson is passionate about preventive cardiology and patient education, helping patients understand and manage their heart health.
-          </p>
-          <p>
-            She completed her medical degree at Harvard Medical School and her cardiology fellowship at Mayo Clinic. 
-            Dr. Johnson is an active member of the American College of Cardiology and regularly contributes to peer-reviewed journals. 
-            She is committed to providing compassionate, evidence-based care to all her patients.
-          </p>
-        </div>
+        <p className="text-slate-600 dark:text-slate-300 leading-relaxed text-sm font-medium whitespace-pre-line">
+          {profile.bio || "This doctor hasn't added a bio yet."}
+        </p>
       </div>
 
       {/* --- CHARTS SECTION --- */}
