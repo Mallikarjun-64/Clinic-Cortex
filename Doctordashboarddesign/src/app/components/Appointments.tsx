@@ -52,7 +52,8 @@ export function Appointments() {
           date: item.appointment_date ? new Date(item.appointment_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Apr 2, 2026",
           time: item.appointment_time || "10:00 AM",
           status: item.status || "Scheduled",
-          condition: item.condition || "Consultation"
+          condition: item.condition || "Consultation",
+          vitals: typeof item.vitals === 'string' ? JSON.parse(item.vitals) : item.vitals
         }));
         setAppointments(mapped);
         saveAppointments(mapped);
@@ -397,25 +398,36 @@ export function Appointments() {
                           <div className="space-y-6">
                             <h4 className="text-[11px] font-black text-slate-400 dark:text-slate-550 uppercase tracking-widest">Live Vital Signs</h4>
                             <div className="grid grid-cols-2 gap-3">
-                              {[
-                                { label: "Blood Glucose", val: "80", unit: "mmol/L", icon: Droplets, color: "text-red-500" },
-                                { label: "HRV", val: "74.4", unit: "ms", icon: Activity, color: "text-green-500" },
-                                { label: "SpO2", val: "95.6", unit: "%", icon: Heart, color: "text-blue-500" },
-                                { label: "Temp", val: "34.3", unit: "°C", icon: Thermometer, color: "text-orange-500" },
-                                { label: "Sleep", val: "4h 50m", unit: "", icon: Moon, color: "text-indigo-500" },
-                                { label: "RHR", val: "53.5", unit: "bpm", icon: Heart, color: "text-pink-500" },
-                              ].map((stat, i) => (
-                                <div key={i} className="bg-white dark:bg-slate-950 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between h-28">
-                                  <div className="flex justify-between items-center">
-                                    <stat.icon size={18} className={stat.color} />
-                                    <div className="text-[9px] font-black bg-green-50 dark:bg-green-950/30 text-green-600 dark:text-green-400 px-1.5 py-0.5 rounded">NORMAL</div>
-                                  </div>
-                                  <div>
-                                    <div className="text-xl font-black text-slate-900 dark:text-white">{stat.val}<span className="text-[10px] ml-1 text-slate-400 dark:text-slate-500 font-medium">{stat.unit}</span></div>
-                                    <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-tight">{stat.label}</div>
-                                  </div>
-                                </div>
-                              ))}
+                              {(() => {
+                                const v = (apt as any).vitals || {};
+                                return [
+                                  { label: "Blood Glucose", raw: v.blood_glucose ?? v.bloodGlucose, unit: "mmol/L", icon: Droplets, color: "text-red-500" },
+                                  { label: "HRV", raw: v.hrv, unit: "ms", icon: Activity, color: "text-green-500" },
+                                  { label: "SpO2", raw: v.spo2, unit: "%", icon: Heart, color: "text-blue-500" },
+                                  { label: "Temp", raw: v.temp, unit: "°C", icon: Thermometer, color: "text-orange-500" },
+                                  { label: "Sleep", raw: v.sleep, unit: "", icon: Moon, color: "text-indigo-500" },
+                                  { label: "RHR", raw: v.rhr, unit: "bpm", icon: Heart, color: "text-pink-500" },
+                                ].map((stat, i) => {
+                                  const isRec = stat.raw !== null && stat.raw !== undefined && stat.raw !== "";
+                                  return (
+                                    <div key={i} className="bg-white dark:bg-slate-950 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between h-28">
+                                      <div className="flex justify-between items-center">
+                                        <stat.icon size={18} className={stat.color} />
+                                        <div className={`text-[9px] font-black px-1.5 py-0.5 rounded ${isRec ? "bg-green-50 dark:bg-green-950/30 text-green-600 dark:text-green-400" : "bg-slate-100 dark:bg-slate-800 text-slate-400"}`}>
+                                          {isRec ? "RECORDED" : "N/A"}
+                                        </div>
+                                      </div>
+                                      <div>
+                                        <div className={`text-xl font-black ${isRec ? "text-slate-900 dark:text-white" : "text-xs text-slate-400 italic font-normal"}`}>
+                                          {isRec ? String(stat.raw) : "Not recorded"}
+                                          {isRec && <span className="text-[10px] ml-1 text-slate-400 dark:text-slate-500 font-medium">{stat.unit}</span>}
+                                        </div>
+                                        <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-tight">{stat.label}</div>
+                                      </div>
+                                    </div>
+                                  );
+                                });
+                              })()}
                             </div>
                           </div>
 

@@ -35,6 +35,7 @@ function Badge({ tone, children }: { tone: "normal" | "lower"; children: React.R
 export function HomeScreen() {
   const { setScreen, t } = useCC();
   const [upcoming, setUpcoming] = useState<any>(null);
+  const [latestVitals, setLatestVitals] = useState<any>(null);
 
   useEffect(() => {
     api.get('/appointments?tab=upcoming')
@@ -46,6 +47,16 @@ export function HomeScreen() {
         }
       })
       .catch(() => setUpcoming(null));
+
+    api.get('/patients/me/vitals-history')
+      .then((res) => {
+        if (res.success && Array.isArray(res.vitals) && res.vitals.length > 0) {
+          setLatestVitals(res.vitals[0]);
+        } else {
+          setLatestVitals(null);
+        }
+      })
+      .catch(() => setLatestVitals(null));
   }, []);
 
   const services = [
@@ -123,10 +134,10 @@ export function HomeScreen() {
 
       <Section title="Health snapshot" action={<button onClick={() => setScreen("vitals")} className="text-xs text-primary font-semibold">All vitals</button>}>
         <div className="grid grid-cols-2 gap-3">
-          <MiniVital icon={Heart} label="Heart" value="53.5" unit="bpm" tone="lower" />
-          <MiniVital icon={Activity} label="HRV" value="74.4" unit="ms" tone="normal" />
-          <MiniVital icon={Wind} label="SpO₂" value="95.6" unit="%" tone="normal" />
-          <MiniVital icon={Moon} label="Sleep" value="4h 50m" unit="" tone="lower" />
+          <MiniVital icon={Heart} label="Heart" value={latestVitals?.rhr != null ? String(latestVitals.rhr) : "Not recorded"} unit={latestVitals?.rhr != null ? "bpm" : ""} tone="lower" />
+          <MiniVital icon={Activity} label="HRV" value={latestVitals?.hrv != null ? String(latestVitals.hrv) : "Not recorded"} unit={latestVitals?.hrv != null ? "ms" : ""} tone="normal" />
+          <MiniVital icon={Droplet} label="SpO₂" value={latestVitals?.spo2 != null ? String(latestVitals.spo2) : "Not recorded"} unit={latestVitals?.spo2 != null ? "%" : ""} tone="normal" />
+          <MiniVital icon={Moon} label="Sleep" value={latestVitals?.sleep != null ? String(latestVitals.sleep) : "Not recorded"} unit="" tone="lower" />
         </div>
       </Section>
     </div>
@@ -630,10 +641,18 @@ export function GlucoseScreen() {
         const res = await api.get('/patients/me/vitals-history');
         if (res.success && Array.isArray(res.vitals) && res.vitals.length > 0) {
           const val = res.vitals[0].blood_glucose;
-          setGlucose(typeof val === 'number' ? val : parseFloat(val) || 80);
+          if (val !== null && val !== undefined && val !== "") {
+            const parsed = typeof val === 'number' ? val : parseFloat(val);
+            setGlucose(!isNaN(parsed) ? parsed : null);
+          } else {
+            setGlucose(null);
+          }
+        } else {
+          setGlucose(null);
         }
       } catch (err) {
         console.warn("Fetch glucose error", err);
+        setGlucose(null);
       } finally {
         setLoading(false);
       }
@@ -641,7 +660,7 @@ export function GlucoseScreen() {
     loadGlucose();
   }, []);
 
-  const arc = glucose ? (glucose / 200) * 100 : 0;
+  const arc = glucose !== null ? (glucose / 200) * 100 : 0;
 
   return (
     <div className="pb-8">
@@ -721,14 +740,13 @@ export function VitalsScreen() {
     loadVitals();
   }, []);
 
-  const vitalsList = latestVitals ? [
-    { icon: Wind, label: "Respiratory Rate", v: "15.2", u: "rpm", tone: "normal" as const, fill: 60 },
-    { icon: Heart, label: "Resting Heart Rate", v: String(latestVitals.rhr || "53.5"), u: "bpm", tone: "lower" as const, fill: 30 },
-    { icon: Activity, label: "Heart Rate Variability", v: String(latestVitals.hrv || "74.4"), u: "ms", tone: "normal" as const, fill: 70 },
-    { icon: Droplet, label: "Blood Oxygen (SpO₂)", v: String(latestVitals.spo2 || "95.6"), u: "%", tone: "normal" as const, fill: 85 },
-    { icon: Thermometer, label: "Temperature", v: String(latestVitals.temp || "34.3"), u: "°C", tone: "normal" as const, fill: 55 },
-    { icon: Moon, label: "Sleep Monitor", v: String(latestVitals.sleep || "4h 50m"), u: "", tone: "lower" as const, fill: 35 },
-  ] : [];
+  const vitalsList = [
+    { icon: Heart, label: "Resting Heart Rate", rawVal: latestVitals?.rhr, u: "bpm", tone: "lower" as const, fill: 30 },
+    { icon: Activity, label: "Heart Rate Variability", rawVal: latestVitals?.hrv, u: "ms", tone: "normal" as const, fill: 70 },
+    { icon: Droplet, label: "Blood Oxygen (SpO₂)", rawVal: latestVitals?.spo2, u: "%", tone: "normal" as const, fill: 85 },
+    { icon: Thermometer, label: "Temperature", rawVal: latestVitals?.temp, u: "°C", tone: "normal" as const, fill: 55 },
+    { icon: Moon, label: "Sleep Monitor", rawVal: latestVitals?.sleep, u: "", tone: "lower" as const, fill: 35 },
+  ];
 
   return (
     <div>
@@ -741,32 +759,34 @@ export function VitalsScreen() {
           <div className="py-12 flex justify-center">
             <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
           </div>
-        ) : latestVitals ? (
+        ) : (
           <div className="grid grid-cols-2 gap-3">
             {vitalsList.map((vi) => {
               const I = vi.icon;
+              const isRecorded = vi.rawVal !== null && vi.rawVal !== undefined && vi.rawVal !== "";
+              const displayVal = isRecorded ? String(vi.rawVal) : "Not recorded";
               return (
                 <div key={vi.label} className="bg-card border rounded-3xl p-4 cc-shadow">
                   <div className="flex items-center justify-between">
                     <div className="w-9 h-9 rounded-2xl bg-primary/10 text-primary flex items-center justify-center"><I className="w-5 h-5" /></div>
-                    <Badge tone={vi.tone}>{vi.tone === "normal" ? "Normal" : "Lower"}</Badge>
+                    <Badge tone={isRecorded ? vi.tone : "normal"}>{isRecorded ? (vi.tone === "normal" ? "Normal" : "Lower") : "N/A"}</Badge>
                   </div>
                   <div className="mt-3 flex items-end gap-2">
                     <div className="flex-1">
                       <div className="text-[10px] text-muted-foreground leading-none">{vi.label}</div>
-                      <div className="text-xl font-bold mt-1 leading-none">{vi.v} <span className="text-xs font-normal text-muted-foreground">{vi.u}</span></div>
+                      <div className={`text-xl font-bold mt-1 leading-none ${!isRecorded ? "text-xs text-muted-foreground italic font-normal" : ""}`}>
+                        {displayVal} {isRecorded && <span className="text-xs font-normal text-muted-foreground">{vi.u}</span>}
+                      </div>
                     </div>
-                    <div className="w-2.5 h-16 rounded-full bg-muted relative overflow-hidden">
-                      <div className={`absolute bottom-0 inset-x-0 rounded-full transition-all ${vi.tone === "normal" ? "bg-emerald-500" : "bg-red-500"}`} style={{ height: `${vi.fill}%` }} />
-                    </div>
+                    {isRecorded && (
+                      <div className="w-2.5 h-16 rounded-full bg-muted relative overflow-hidden">
+                        <div className={`absolute bottom-0 inset-x-0 rounded-full transition-all ${vi.tone === "normal" ? "bg-emerald-500" : "bg-red-500"}`} style={{ height: `${vi.fill}%` }} />
+                      </div>
+                    )}
                   </div>
                 </div>
               );
             })}
-          </div>
-        ) : (
-          <div className="bg-card border rounded-3xl p-8 text-center text-sm font-medium text-muted-foreground">
-            No vitals recorded yet. Complete an appointment or AI assessment to track your vitals.
           </div>
         )}
       </div>

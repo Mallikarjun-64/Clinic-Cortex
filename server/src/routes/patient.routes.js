@@ -57,12 +57,12 @@ router.get('/me/vitals-history', authenticatePatientToken, async (req, res) => {
         historyMap.set(dateStr, {
           date: dateStr,
           source: 'appointment',
-          blood_glucose: v.blood_glucose || v.bloodGlucose || 80,
-          hrv: v.hrv || 74.4,
-          spo2: v.spo2 || 95.6,
-          temp: v.temp || 34.3,
-          sleep: v.sleep || "4h 50m",
-          rhr: v.rhr || 53.5
+          blood_glucose: v.blood_glucose ?? v.bloodGlucose ?? null,
+          hrv: v.hrv ?? null,
+          spo2: v.spo2 ?? null,
+          temp: v.temp ?? null,
+          sleep: v.sleep ?? null,
+          rhr: v.rhr ?? null
         });
       }
     }
@@ -82,12 +82,12 @@ router.get('/me/vitals-history', authenticatePatientToken, async (req, res) => {
         historyMap.set(dateStr, {
           date: dateStr,
           source: 'ai_analysis',
-          blood_glucose: v.blood_glucose || v.bloodGlucose || 80,
-          hrv: v.hrv || 74.4,
-          spo2: v.spo2 || 95.6,
-          temp: v.temp || 34.3,
-          sleep: v.sleep || "4h 50m",
-          rhr: v.rhr || 53.5
+          blood_glucose: v.blood_glucose ?? v.bloodGlucose ?? null,
+          hrv: v.hrv ?? null,
+          spo2: v.spo2 ?? null,
+          temp: v.temp ?? null,
+          sleep: v.sleep ?? null,
+          rhr: v.rhr ?? null
         });
       }
     }
