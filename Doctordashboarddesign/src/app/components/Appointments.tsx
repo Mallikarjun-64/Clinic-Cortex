@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, Fragment } from "react";
 import { useNavigate } from "react-router";
 import { 
   Calendar, Search, Filter, Video, Home as HomeIcon, 
   Building2, MoreVertical, X, CheckCircle2, 
-  Droplets, Heart, Activity, Thermometer, Moon 
+  Droplets, Heart, Activity, Thermometer, Moon,
+  Pill, Plus, Trash2, Edit, FileText
 } from "lucide-react";
 import { Appointment, loadAppointments, saveAppointments } from "../lib/appointmentData";
 import { api } from "../lib/api";
@@ -21,6 +22,28 @@ export function Appointments() {
   const [rescheduleDate, setRescheduleDate] = useState("");
   const [rescheduleReason, setRescheduleReason] = useState("");
   const [expandedPatientId, setExpandedPatientId] = useState<number | string | null>(null);
+
+  // Consultation & Prescriptions Modal States
+  const [isConsultationOpen, setIsConsultationOpen] = useState(false);
+  const [editingAppt, setEditingAppt] = useState<any>(null);
+  const [editStatus, setEditStatus] = useState("Completed");
+  const [editCondition, setEditCondition] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+  
+  // Vitals states
+  const [editGlucose, setEditGlucose] = useState("");
+  const [editRhr, setEditRhr] = useState("");
+  const [editHrv, setEditHrv] = useState("");
+  const [editSpo2, setEditSpo2] = useState("");
+  const [editTemp, setEditTemp] = useState("");
+  const [editSleep, setEditSleep] = useState("");
+
+  // Prescriptions list state
+  const [prescriptionsList, setPrescriptionsList] = useState<{ medication: string; dosage: string; instructions: string }[]>([]);
+  const [newMedication, setNewMedication] = useState("");
+  const [newDosage, setNewDosage] = useState("");
+  const [newInstructions, setNewInstructions] = useState("");
+  const [savingConsultation, setSavingConsultation] = useState(false);
 
   // New Appointment Modal States
   const [isNewApptOpen, setIsNewApptOpen] = useState(false);
@@ -46,6 +69,7 @@ export function Appointments() {
       if (res.success && Array.isArray(res.appointments)) {
         const mapped = res.appointments.map((item: any) => ({
           id: item.id,
+          patient_id: item.patient_id,
           patient: item.patient_name || item.patient || "Patient",
           age: item.patient_age || 30,
           type: item.visit_type || "Clinic",
@@ -53,6 +77,7 @@ export function Appointments() {
           time: item.appointment_time || "10:00 AM",
           status: item.status || "Scheduled",
           condition: item.condition || "Consultation",
+          notes: item.notes || "",
           vitals: typeof item.vitals === 'string' ? JSON.parse(item.vitals) : item.vitals
         }));
         setAppointments(mapped);
@@ -66,6 +91,102 @@ export function Appointments() {
   useEffect(() => {
     fetchAppointments();
   }, [activeTab, filterType]);
+
+  const handleStartSession = (apt: any) => {
+    setEditingAppt(apt);
+    setEditStatus(apt.status === "Completed" ? "Completed" : "Completed");
+    setEditCondition(apt.condition || "");
+    setEditNotes(apt.notes || "");
+    
+    const v = apt.vitals || {};
+    setEditGlucose(v.blood_glucose ?? v.bloodGlucose ?? "");
+    setEditRhr(v.rhr ?? "");
+    setEditHrv(v.hrv ?? "");
+    setEditSpo2(v.spo2 ?? "");
+    setEditTemp(v.temp ?? "");
+    setEditSleep(v.sleep ?? "");
+
+    setPrescriptionsList([]);
+    setNewMedication("");
+    setNewDosage("");
+    setNewInstructions("");
+    
+    setIsConsultationOpen(true);
+  };
+
+  const handleAddPrescriptionItem = () => {
+    if (!newMedication.trim()) {
+      triggerToast("Medication name is required.");
+      return;
+    }
+    setPrescriptionsList((prev) => [
+      ...prev,
+      {
+        medication: newMedication.trim(),
+        dosage: newDosage.trim(),
+        instructions: newInstructions.trim()
+      }
+    ]);
+    setNewMedication("");
+    setNewDosage("");
+    setNewInstructions("");
+  };
+
+  const handleRemovePrescriptionItem = (index: number) => {
+    setPrescriptionsList((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleSaveConsultation = async () => {
+    if (!editingAppt) return;
+    setSavingConsultation(true);
+
+    try {
+      const vitalsObj = {
+        blood_glucose: editGlucose ? parseFloat(editGlucose) : null,
+        rhr: editRhr ? parseFloat(editRhr) : null,
+        hrv: editHrv ? parseFloat(editHrv) : null,
+        spo2: editSpo2 ? parseFloat(editSpo2) : null,
+        temp: editTemp ? parseFloat(editTemp) : null,
+        sleep: editSleep || null
+      };
+
+      // 1. Update appointment details
+      await api.put(`/appointments/${editingAppt.id}`, {
+        condition: editCondition,
+        notes: editNotes,
+        status: editStatus,
+        vitals: vitalsObj
+      });
+
+      const patientId = editingAppt.patient_id || editingAppt.patientId || editingAppt.id;
+
+      // 2. Create Medical Record
+      await api.post(`/patients/${patientId}/records`, {
+        diagnosis: editCondition || 'Consultation Record',
+        notes: editNotes,
+        vitals: vitalsObj,
+        patientName: editingAppt.patient
+      }).catch((err) => console.warn("Record creation warning", err));
+
+      // 3. Issue Prescriptions
+      for (const item of prescriptionsList) {
+        await api.post(`/patients/${patientId}/prescriptions`, {
+          medication: item.medication,
+          dosage: item.dosage,
+          instructions: item.instructions,
+          patientName: editingAppt.patient
+        }).catch((err) => console.warn("Prescription creation warning", err));
+      }
+
+      triggerToast("Consultation saved & prescriptions issued successfully!");
+      setIsConsultationOpen(false);
+      await fetchAppointments();
+    } catch (err: any) {
+      triggerToast(err.message || "Failed to save consultation details.");
+    } finally {
+      setSavingConsultation(false);
+    }
+  };
 
   const handleCancelAppointment = async (id: number | string) => {
     try {
@@ -159,16 +280,6 @@ export function Appointments() {
       }
     } catch (err: any) {
       triggerToast(err.message || "Error scheduling appointment.");
-    }
-  };
-
-  const handleStartSession = (apt: Appointment) => {
-    if (apt.type === "Video") {
-      navigate("/dashboard/virtual-consultation");
-    } else if (apt.type === "Home") {
-      navigate("/dashboard/home-visits");
-    } else {
-      setExpandedPatientId(expandedPatientId === apt.id ? null : apt.id);
     }
   };
 
@@ -316,7 +427,7 @@ export function Appointments() {
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {filteredAppointments.map((apt) => (
-                <div key={apt.id} className="contents">
+                <Fragment key={apt.id}>
                   <tr className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors ${expandedPatientId === apt.id ? 'bg-slate-50/50 dark:bg-slate-800/20' : ''}`}>
                     <td className="px-8 py-5">
                       <div className="flex items-center gap-4">
@@ -473,6 +584,13 @@ export function Appointments() {
                                     "{apt.condition} — consultation recorded for patient {apt.patient}."
                                   </p>
                                 </div>
+                                <button
+                                  onClick={() => handleStartSession(apt)}
+                                  className="w-full mt-4 py-3 rounded-xl bg-[#163CC7] text-white font-bold text-xs flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/20"
+                                >
+                                  <Edit size={14} />
+                                  <span>Edit Consultation, Vitals & Issue Prescriptions</span>
+                                </button>
                               </div>
                             </div>
                           </div>
@@ -480,7 +598,7 @@ export function Appointments() {
                       </td>
                     </tr>
                   )}
-                </div>
+                </Fragment>
               ))}
               {filteredAppointments.length === 0 && (
                 <tr className="bg-slate-50 dark:bg-slate-900">
@@ -620,6 +738,237 @@ export function Appointments() {
               Schedule Appointment
             </button>
           </form>
+        </div>
+      )}
+
+      {/* Start Consultation / Edit Session Modal */}
+      {isConsultationOpen && editingAppt && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-3xl my-8 rounded-[2.5rem] p-8 shadow-2xl border border-slate-100 dark:border-slate-800 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-3">
+                  <FileText className="text-[#163CC7] dark:text-[#4F6FE5]" size={28} />
+                  <span>Start Consultation & Medical Assessment</span>
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Patient: <span className="font-bold text-[#163CC7] dark:text-[#4F6FE5]">{editingAppt.patient}</span> • Age: {editingAppt.age} • Visit: {editingAppt.type}
+                </p>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setIsConsultationOpen(false)} 
+                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-800 dark:text-slate-300 transition-colors"
+              >
+                <X size={20}/>
+              </button>
+            </div>
+
+            <div className="space-y-6">
+              {/* Status & Diagnosis */}
+              <div className="bg-slate-50 dark:bg-slate-850 p-5 rounded-2xl space-y-4">
+                <h4 className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Appointment Status & Clinical Diagnosis</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-1.5 block">Status</label>
+                    <select
+                      value={editStatus}
+                      onChange={(e) => setEditStatus(e.target.value)}
+                      className="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white text-sm font-bold outline-none"
+                    >
+                      <option value="Completed">Completed</option>
+                      <option value="In-Progress">In-Progress</option>
+                      <option value="Scheduled">Scheduled</option>
+                      <option value="Confirmed">Confirmed</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-1.5 block">Diagnosis / Condition</label>
+                    <input
+                      type="text"
+                      value={editCondition}
+                      onChange={(e) => setEditCondition(e.target.value)}
+                      placeholder="e.g. Hypertension, Viral Fever"
+                      className="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white text-sm font-semibold outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-1.5 block">Treatment Plan & Clinical Notes</label>
+                  <textarea
+                    value={editNotes}
+                    onChange={(e) => setEditNotes(e.target.value)}
+                    placeholder="Enter detailed consultation notes and treatment recommendations..."
+                    className="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white text-sm h-24 resize-none outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Vitals Section */}
+              <div className="bg-slate-50 dark:bg-slate-850 p-5 rounded-2xl space-y-4">
+                <h4 className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Update Patient Biometric Vitals</h4>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1 block">Blood Glucose (mmol/L)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={editGlucose}
+                      onChange={(e) => setEditGlucose(e.target.value)}
+                      placeholder="e.g. 85"
+                      className="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white text-sm font-bold outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1 block">Resting HR (bpm)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={editRhr}
+                      onChange={(e) => setEditRhr(e.target.value)}
+                      placeholder="e.g. 72"
+                      className="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white text-sm font-bold outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1 block">HRV (ms)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={editHrv}
+                      onChange={(e) => setEditHrv(e.target.value)}
+                      placeholder="e.g. 68"
+                      className="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white text-sm font-bold outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1 block">SpO2 (%)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={editSpo2}
+                      onChange={(e) => setEditSpo2(e.target.value)}
+                      placeholder="e.g. 98"
+                      className="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white text-sm font-bold outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1 block">Temperature (°C)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={editTemp}
+                      onChange={(e) => setEditTemp(e.target.value)}
+                      placeholder="e.g. 36.8"
+                      className="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white text-sm font-bold outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1 block">Sleep Duration</label>
+                    <input
+                      type="text"
+                      value={editSleep}
+                      onChange={(e) => setEditSleep(e.target.value)}
+                      placeholder="e.g. 7h 30m"
+                      className="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white text-sm font-bold outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Prescriptions Section */}
+              <div className="bg-[#163CC7]/5 dark:bg-blue-950/20 p-5 rounded-2xl border border-blue-100 dark:border-blue-900/40 space-y-4">
+                <h4 className="text-xs font-black text-[#163CC7] dark:text-[#4F6FE5] uppercase tracking-widest flex items-center gap-2">
+                  <Pill size={16} />
+                  <span>Issue Prescriptions</span>
+                </h4>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 mb-1 block">Medication Name *</label>
+                    <input
+                      type="text"
+                      value={newMedication}
+                      onChange={(e) => setNewMedication(e.target.value)}
+                      placeholder="e.g. Amoxicillin 500mg"
+                      className="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white text-xs font-semibold outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 mb-1 block">Dosage</label>
+                    <input
+                      type="text"
+                      value={newDosage}
+                      onChange={(e) => setNewDosage(e.target.value)}
+                      placeholder="e.g. 1 tab twice daily"
+                      className="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white text-xs outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 mb-1 block">Instructions</label>
+                    <input
+                      type="text"
+                      value={newInstructions}
+                      onChange={(e) => setNewInstructions(e.target.value)}
+                      placeholder="e.g. Take after meals for 5 days"
+                      className="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white text-xs outline-none"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleAddPrescriptionItem}
+                  className="px-4 py-2 bg-[#163CC7] text-white rounded-xl text-xs font-bold flex items-center gap-1.5 hover:bg-blue-700 transition-colors"
+                >
+                  <Plus size={14} />
+                  <span>Add Medication to Prescription</span>
+                </button>
+
+                {prescriptionsList.length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    <div className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Prescribed Items ({prescriptionsList.length})</div>
+                    {prescriptionsList.map((item, idx) => (
+                      <div key={idx} className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                        <div>
+                          <div className="text-xs font-bold text-slate-800 dark:text-white">{item.medication}</div>
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                            {item.dosage && `Dosage: ${item.dosage}`} {item.instructions && `• ${item.instructions}`}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemovePrescriptionItem(idx)}
+                          className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-8 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setIsConsultationOpen(false)}
+                className="flex-1 py-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-sm"
+              >
+                Cancel
+              </button>
+              <button 
+                type="button"
+                disabled={savingConsultation}
+                onClick={handleSaveConsultation}
+                className="flex-1 py-3.5 rounded-2xl bg-[#163CC7] text-white font-black shadow-xl shadow-blue-500/30 hover:opacity-90 transition-all text-sm disabled:opacity-50"
+              >
+                {savingConsultation ? "Saving Consultation..." : "Save Consultation & Issue Prescriptions"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
