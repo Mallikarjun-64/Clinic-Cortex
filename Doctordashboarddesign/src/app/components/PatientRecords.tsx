@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Search, Filter, Download, Plus, FileText, Calendar, Activity, Upload, AlertCircle } from "lucide-react";
+import { Search, Filter, Download, Plus, FileText, Calendar, Activity, Upload, AlertCircle, X, Pill, CheckCircle2 } from "lucide-react";
 import { getDoctorDisplayName } from "../lib/doctorProfile";
 import { api } from "../lib/api";
 
@@ -14,6 +14,16 @@ export function PatientRecords() {
   const [prescriptions, setPrescriptions] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Add Record Modal States
+  const [isAddRecordOpen, setIsAddRecordOpen] = useState(false);
+  const [addRecordType, setAddRecordType] = useState<"Prescription" | "Record">("Prescription");
+  const [medication, setMedication] = useState("");
+  const [dosage, setDosage] = useState("");
+  const [instructions, setInstructions] = useState("");
+  const [diagnosis, setDiagnosis] = useState("");
+  const [notes, setNotes] = useState("");
+  const [savingRecord, setSavingRecord] = useState(false);
 
   // Load patients list on mount
   useEffect(() => {
@@ -32,30 +42,69 @@ export function PatientRecords() {
   }, []);
 
   // Load records and prescriptions when patient changes
-  useEffect(() => {
+  async function loadPatientDetails() {
     if (!selectedPatientId) return;
-
-    async function loadPatientDetails() {
-      setLoading(true);
-      setError(null);
-      try {
-        const recRes = await api.get(`/patients/${selectedPatientId}/records`);
-        const prescRes = await api.get(`/patients/${selectedPatientId}/prescriptions`);
-        
-        if (recRes.success && Array.isArray(recRes.records)) {
-          setMedicalRecords(recRes.records);
-        }
-        if (prescRes.success && Array.isArray(prescRes.prescriptions)) {
-          setPrescriptions(prescRes.prescriptions);
-        }
-      } catch (err: any) {
-        setError(err.message || "Failed to load clinical records");
-      } finally {
-        setLoading(false);
+    setLoading(true);
+    setError(null);
+    try {
+      const recRes = await api.get(`/patients/${selectedPatientId}/records`);
+      const prescRes = await api.get(`/patients/${selectedPatientId}/prescriptions`);
+      
+      if (recRes.success && Array.isArray(recRes.records)) {
+        setMedicalRecords(recRes.records);
       }
+      if (prescRes.success && Array.isArray(prescRes.prescriptions)) {
+        setPrescriptions(prescRes.prescriptions);
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to load clinical records");
+    } finally {
+      setLoading(false);
     }
+  }
+
+  useEffect(() => {
     loadPatientDetails();
   }, [selectedPatientId]);
+
+  const handleCreateRecordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPatientId) return;
+    setSavingRecord(true);
+
+    try {
+      const selectedPatient = patients.find(p => p.id === selectedPatientId);
+      const patientName = selectedPatient ? selectedPatient.name : "Patient";
+
+      if (addRecordType === "Prescription") {
+        if (!medication.trim()) return;
+        await api.post(`/patients/${selectedPatientId}/prescriptions`, {
+          medication,
+          dosage,
+          instructions,
+          patientName
+        });
+      } else {
+        await api.post(`/patients/${selectedPatientId}/records`, {
+          diagnosis: diagnosis || 'Clinical Consult',
+          notes,
+          patientName
+        });
+      }
+
+      setIsAddRecordOpen(false);
+      setMedication("");
+      setDosage("");
+      setInstructions("");
+      setDiagnosis("");
+      setNotes("");
+      await loadPatientDetails();
+    } catch (err: any) {
+      console.error("Create Record/Prescription Error", err);
+    } finally {
+      setSavingRecord(false);
+    }
+  };
 
   // Combine records and prescriptions into unified timeline items
   const unifiedItems = [
@@ -112,6 +161,13 @@ export function PatientRecords() {
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
+          <button
+            onClick={() => setIsAddRecordOpen(true)}
+            className="px-5 py-2.5 rounded-xl bg-[#163CC7] text-white hover:bg-blue-700 font-bold text-sm flex items-center gap-2 shadow-lg shadow-blue-500/20 transition-all"
+          >
+            <Plus size={18} />
+            <span>Add Record / Prescription</span>
+          </button>
         </div>
       </div>
 
@@ -215,6 +271,108 @@ export function PatientRecords() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Add Record / Prescription Modal */}
+      {isAddRecordOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <form onSubmit={handleCreateRecordSubmit} className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-[2.5rem] p-8 shadow-2xl border border-slate-100 dark:border-slate-800">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-2xl font-black text-slate-900 dark:text-white">Add Patient Entry</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Issue prescription or add medical record for selected patient</p>
+              </div>
+              <button type="button" onClick={() => setIsAddRecordOpen(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-800 dark:text-slate-300 transition-colors"><X size={20}/></button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2 block">Entry Type</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAddRecordType("Prescription")}
+                    className={`py-2.5 rounded-xl font-bold text-xs border transition-all ${addRecordType === "Prescription" ? "bg-[#163CC7] text-white border-[#163CC7]" : "bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700"}`}
+                  >
+                    Prescription
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAddRecordType("Record")}
+                    className={`py-2.5 rounded-xl font-bold text-xs border transition-all ${addRecordType === "Record" ? "bg-[#163CC7] text-white border-[#163CC7]" : "bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700"}`}
+                  >
+                    Medical Record
+                  </button>
+                </div>
+              </div>
+
+              {addRecordType === "Prescription" ? (
+                <>
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2 block">Medication Name *</label>
+                    <input
+                      type="text"
+                      required
+                      value={medication}
+                      onChange={(e) => setMedication(e.target.value)}
+                      placeholder="e.g. Paracetamol 500mg"
+                      className="w-full p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white text-sm outline-none font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2 block">Dosage</label>
+                    <input
+                      type="text"
+                      value={dosage}
+                      onChange={(e) => setDosage(e.target.value)}
+                      placeholder="e.g. 1 tab thrice daily"
+                      className="w-full p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white text-sm outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2 block">Instructions</label>
+                    <textarea
+                      value={instructions}
+                      onChange={(e) => setInstructions(e.target.value)}
+                      placeholder="e.g. Take after food for 3 days"
+                      className="w-full p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white text-sm outline-none h-20 resize-none"
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2 block">Diagnosis / Title</label>
+                    <input
+                      type="text"
+                      value={diagnosis}
+                      onChange={(e) => setDiagnosis(e.target.value)}
+                      placeholder="e.g. Routine Consultation"
+                      className="w-full p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white text-sm outline-none font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2 block">Notes / Clinical Findings</label>
+                    <textarea
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                      placeholder="Enter clinical assessment and notes..."
+                      className="w-full p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white text-sm outline-none h-24 resize-none"
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+
+            <button 
+              type="submit"
+              disabled={savingRecord}
+              className="w-full mt-6 bg-[#163CC7] text-white py-4 rounded-2xl font-black shadow-xl shadow-blue-500/30 hover:-translate-y-1 active:translate-y-0 transition-all text-sm disabled:opacity-50"
+            >
+              {savingRecord ? "Saving..." : addRecordType === "Prescription" ? "Issue Prescription" : "Save Medical Record"}
+            </button>
+          </form>
         </div>
       )}
     </div>
