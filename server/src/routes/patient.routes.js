@@ -271,6 +271,57 @@ router.get('/:id/records', authenticateToken, async (req, res) => {
   }
 });
 
+// @route   POST /api/patients/:id/records
+// @desc    Add a medical record for a patient
+router.post('/:id/records', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { diagnosis, treatment, notes, vitals, patientName } = req.body;
+
+  try {
+    let doctorId = req.user?.id;
+    const docCheck = await query('SELECT id FROM doctors WHERE id = $1', [doctorId]).catch(() => ({ rows: [] }));
+    if (docCheck.rows.length === 0) {
+      const firstDoc = await query('SELECT id FROM doctors LIMIT 1');
+      if (firstDoc.rows.length > 0) {
+        doctorId = firstDoc.rows[0].id;
+      }
+    }
+
+    let targetPatientId = id;
+
+    // Verify patient UUID exists
+    const patientCheck = await query('SELECT id FROM patients WHERE id = $1', [targetPatientId]).catch(() => ({ rows: [] }));
+    if (patientCheck.rows.length === 0) {
+      const nameSearch = await query('SELECT id FROM patients WHERE LOWER(name) = LOWER($1)', [patientName || targetPatientId]);
+      if (nameSearch.rows.length > 0) {
+        targetPatientId = nameSearch.rows[0].id;
+      } else {
+        const newP = await query(
+          `INSERT INTO patients (name, gender, condition) VALUES ($1, 'Other', $2) RETURNING id`,
+          [patientName || 'Patient', diagnosis || 'General Consultation']
+        );
+        targetPatientId = newP.rows[0].id;
+      }
+    }
+
+    const result = await query(
+      `INSERT INTO medical_records (patient_id, doctor_id, record_type, diagnosis, notes, vitals, record_date)
+       VALUES ($1, $2, 'Consultation', $3, $4, $5, CURRENT_DATE)
+       RETURNING *`,
+      [targetPatientId, doctorId, diagnosis || 'Consultation Record', notes || treatment || null, vitals ? JSON.stringify(vitals) : null]
+    );
+
+    res.status(201).json({
+      success: true,
+      message: 'Medical record added successfully',
+      record: result.rows[0]
+    });
+  } catch (err) {
+    console.error('Create Medical Record Error:', err);
+    res.status(500).json({ success: false, message: 'Server error creating medical record' });
+  }
+});
+
 // @route   GET /api/patients/:id/prescriptions
 // @desc    Get written prescription logs of a patient
 router.get('/:id/prescriptions', authenticateToken, async (req, res) => {
@@ -284,6 +335,60 @@ router.get('/:id/prescriptions', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error('Fetch Patient Prescriptions Error:', err);
     res.status(500).json({ success: false, message: 'Server error retrieving prescriptions' });
+  }
+});
+
+// @route   POST /api/patients/:id/prescriptions
+// @desc    Add a prescription for a patient
+router.post('/:id/prescriptions', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { medication, dosage, instructions, patientName } = req.body;
+
+  if (!medication) {
+    return res.status(400).json({ success: false, message: 'Medication is required' });
+  }
+
+  try {
+    let doctorId = req.user?.id;
+    const docCheck = await query('SELECT id FROM doctors WHERE id = $1', [doctorId]).catch(() => ({ rows: [] }));
+    if (docCheck.rows.length === 0) {
+      const firstDoc = await query('SELECT id FROM doctors LIMIT 1');
+      if (firstDoc.rows.length > 0) {
+        doctorId = firstDoc.rows[0].id;
+      }
+    }
+
+    let targetPatientId = id;
+
+    const patientCheck = await query('SELECT id FROM patients WHERE id = $1', [targetPatientId]).catch(() => ({ rows: [] }));
+    if (patientCheck.rows.length === 0) {
+      const nameSearch = await query('SELECT id FROM patients WHERE LOWER(name) = LOWER($1)', [patientName || targetPatientId]);
+      if (nameSearch.rows.length > 0) {
+        targetPatientId = nameSearch.rows[0].id;
+      } else {
+        const newP = await query(
+          `INSERT INTO patients (name, gender) VALUES ($1, 'Other') RETURNING id`,
+          [patientName || 'Patient']
+        );
+        targetPatientId = newP.rows[0].id;
+      }
+    }
+
+    const result = await query(
+      `INSERT INTO prescriptions (patient_id, doctor_id, medication, dosage, instructions, prescribed_date)
+       VALUES ($1, $2, $3, $4, $5, CURRENT_DATE)
+       RETURNING *`,
+      [targetPatientId, doctorId, medication, dosage || null, instructions || null]
+    );
+
+    res.status(201).json({
+      success: true,
+      message: 'Prescription added successfully',
+      prescription: result.rows[0]
+    });
+  } catch (err) {
+    console.error('Create Prescription Error:', err);
+    res.status(500).json({ success: false, message: 'Server error creating prescription' });
   }
 });
 

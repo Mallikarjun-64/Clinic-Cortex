@@ -99,6 +99,14 @@ app.get('/health', (req, res) => {
 });
 
 
+// 404 Handler for undefined API routes
+app.use('/api', (req, res) => {
+  res.status(404).json({
+    success: false,
+    message: `API Endpoint not found: ${req.method} ${req.originalUrl}`
+  });
+});
+
 // Global Error Handler
 app.use((err, req, res, next) => {
   console.error('Unhandled Server Error:', err);

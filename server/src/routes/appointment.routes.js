@@ -230,7 +230,7 @@ router.post('/', authenticateEitherUser, appointmentValidationRules, async (req,
 // @desc    Reschedule/update details of an appointment
 router.put('/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
-  const { date, time, visitType, condition, notes, vitals } = req.body;
+  const { date, time, visitType, condition, notes, vitals, status } = req.body;
 
   try {
     const check = await query('SELECT id FROM appointments WHERE id = $1 AND doctor_id = $2', [id, req.user.id]);
@@ -246,15 +246,26 @@ router.put('/:id', authenticateToken, async (req, res) => {
            condition = COALESCE($4, condition),
            notes = COALESCE($5, notes),
            vitals = COALESCE($6, vitals),
+           status = COALESCE($7, status),
            updated_at = NOW()
-       WHERE id = $7 AND doctor_id = $8
+       WHERE id = $8 AND doctor_id = $9
        RETURNING *`,
-      [date, time, visitType, condition, notes, vitals, id, req.user.id]
+      [
+        date || null,
+        time || null,
+        visitType || null,
+        condition || null,
+        notes || null,
+        vitals ? (typeof vitals === 'string' ? vitals : JSON.stringify(vitals)) : null,
+        status || null,
+        id,
+        req.user.id
+      ]
     );
 
     res.status(200).json({
       success: true,
-      message: 'Appointment rescheduled/updated successfully',
+      message: 'Appointment updated successfully',
       appointment: result.rows[0]
     });
   } catch (err) {
