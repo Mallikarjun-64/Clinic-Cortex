@@ -9,9 +9,21 @@ const router = express.Router();
 // @desc    Get clinical medical records for logged-in patient
 router.get('/me/records', authenticatePatientToken, async (req, res) => {
   try {
+    const patientId = req.patient.id;
+    const patientEmail = req.patient.email || '';
+    
+    const pInfo = await query('SELECT name, email FROM patients WHERE id = $1 OR LOWER(email) = LOWER($2)', [patientId, patientEmail]);
+    const pName = pInfo.rows[0]?.name || '';
+    const pEm = pInfo.rows[0]?.email || patientEmail;
+
     const result = await query(
-      'SELECT * FROM medical_records WHERE patient_id = $1 ORDER BY record_date DESC',
-      [req.patient.id]
+      `SELECT DISTINCT r.* FROM medical_records r
+       LEFT JOIN patients pat ON pat.id = r.patient_id
+       WHERE r.patient_id = $1
+          OR (pat.email IS NOT NULL AND LOWER(pat.email) = LOWER($2) AND $2 != '')
+          OR (pat.name IS NOT NULL AND LOWER(pat.name) = LOWER($3) AND $3 != '')
+       ORDER BY r.record_date DESC, r.created_at DESC`,
+      [patientId, pEm, pName]
     );
     res.status(200).json({ success: true, count: result.rows.length, records: result.rows });
   } catch (err) {
@@ -24,9 +36,21 @@ router.get('/me/records', authenticatePatientToken, async (req, res) => {
 // @desc    Get prescriptions for logged-in patient
 router.get('/me/prescriptions', authenticatePatientToken, async (req, res) => {
   try {
+    const patientId = req.patient.id;
+    const patientEmail = req.patient.email || '';
+    
+    const pInfo = await query('SELECT name, email FROM patients WHERE id = $1 OR LOWER(email) = LOWER($2)', [patientId, patientEmail]);
+    const pName = pInfo.rows[0]?.name || '';
+    const pEm = pInfo.rows[0]?.email || patientEmail;
+
     const result = await query(
-      'SELECT * FROM prescriptions WHERE patient_id = $1 ORDER BY prescribed_date DESC',
-      [req.patient.id]
+      `SELECT DISTINCT p.* FROM prescriptions p
+       LEFT JOIN patients pat ON pat.id = p.patient_id
+       WHERE p.patient_id = $1
+          OR (pat.email IS NOT NULL AND LOWER(pat.email) = LOWER($2) AND $2 != '')
+          OR (pat.name IS NOT NULL AND LOWER(pat.name) = LOWER($3) AND $3 != '')
+       ORDER BY p.prescribed_date DESC, p.created_at DESC`,
+      [patientId, pEm, pName]
     );
     res.status(200).json({ success: true, count: result.rows.length, prescriptions: result.rows });
   } catch (err) {
