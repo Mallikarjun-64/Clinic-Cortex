@@ -1,5 +1,6 @@
 import { FormEvent, useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router";
+import { api } from "../lib/api";
 import { 
   User, Mail, Lock, Shield, Activity, Check, AlertCircle, Calendar, 
   MapPin, Upload, Plus, Trash, PlusCircle, Search, Award, BookOpen, 
@@ -1130,17 +1131,68 @@ export function Signup() {
       return;
     }
 
-    const accountData = { email: formData.profEmail, password: formData.password };
-    localStorage.setItem("cliniccortex-account", JSON.stringify(accountData));
-    localStorage.setItem("clinic_cortex_verified_doctor", JSON.stringify({
-      ...formData,
-      ekycStatus: aadharVerified ? "Level 3 - Full Practice Access" : "Level 1 - Provisional",
-      nmcMatchScore: nmcMatchScore,
-      nmcStatus: nmcApiStatus
-    }));
+    // API logic integration
+    api.post('/auth/signup', {
+      email: formData.profEmail,
+      password: formData.password,
+      firstName: formData.firstName,
+      lastName: formData.lastName
+    })
+    .then(async (response) => {
+      if (response.success && response.token) {
+        // Write active token temporarily to submit the profile fields
+        localStorage.setItem("cliniccortex-token", response.token);
+        
+        // Map UI form keys to backend DB columns inside PUT request
+        await api.put('/doctors/profile', {
+          salutation: formData.salutation,
+          middleName: formData.middleName,
+          dob: formData.dob,
+          gender: formData.gender,
+          nationality: formData.nationality,
+          mobile: formData.mobile,
+          whatsapp: formData.whatsapp,
+          personalEmail: formData.personalEmail,
+          clinicAddress: formData.clinicAddress,
+          homeAddress: formData.homeAddress,
+          city: formData.city,
+          state: formData.state,
+          pincode: formData.pincode,
+          gpsPin: formData.gpsPin,
+          nmcRegNo: formData.regNo,
+          smcName: formData.smcName,
+          regType: "Permanent",
+          regYear: formData.mbbsYear,
+          mbbsUniversity: formData.mbbsUni,
+          mbbsYear: formData.mbbsYear,
+          pgDegree: formData.pgDegree,
+          pgSpecialization: formData.pgSpecialization,
+          experienceYears: formData.expYears ? parseInt(formData.expYears.toString()) : 0,
+          clinicFee: formData.clinicFee ? parseFloat(formData.clinicFee.toString()) : 500.00,
+          onlineFee: formData.onlineFee ? parseFloat(formData.onlineFee.toString()) : 300.00,
+          bio: formData.bio,
+          bankName: formData.bankName,
+          bankAccountNo: formData.bankAccountNo,
+          bankIfsc: formData.bankIfsc,
+          emergencyName: formData.emergencyName,
+          emergencyRelation: formData.emergencyRelation,
+          emergencyPhone: formData.emergencyPhone
+        });
 
-    alert("Signup completed successfully. Please login to continue.");
-    navigate("/login?registered=true", { replace: true });
+        // Clear temporary token so doctor must perform clean login
+        localStorage.removeItem("cliniccortex-token");
+        localStorage.removeItem("clinic_cortex_signup_draft");
+
+        alert("Signup completed successfully. Please login to continue.");
+        navigate("/login?registered=true", { replace: true });
+      } else {
+        alert(response.message || "Failed to create doctor account.");
+      }
+    })
+    .catch((err) => {
+      console.error("Signup call failed:", err);
+      alert(err.message || "Email address is already registered or server is down.");
+    });
   };
 
   return (

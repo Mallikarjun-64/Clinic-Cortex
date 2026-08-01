@@ -1,0 +1,419 @@
+import express from 'express';
+import { query } from '../config/db.js';
+import { authenticateToken } from '../middleware/auth.js';
+import { authenticatePatientToken } from '../middleware/patientAuth.js';
+
+const router = express.Router();
+
+// @route   GET /api/patients/me/records
+// @desc    Get clinical medical records for logged-in patient
+router.get('/me/records', authenticatePatientToken, async (req, res) => {
+  try {
+    const patientId = req.patient.id;
+    const patientEmail = req.patient.email || '';
+    
+    const pInfo = await query('SELECT name, email FROM patients WHERE id = $1 OR LOWER(email) = LOWER($2)', [patientId, patientEmail]);
+    const pName = pInfo.rows[0]?.name || '';
+    const pEm = pInfo.rows[0]?.email || patientEmail;
+
+    const result = await query(
+      `SELECT DISTINCT r.* FROM medical_records r
+       LEFT JOIN patients pat ON pat.id = r.patient_id
+       WHERE r.patient_id = $1
+          OR (pat.email IS NOT NULL AND LOWER(pat.email) = LOWER($2) AND $2 != '')
+          OR (pat.name IS NOT NULL AND LOWER(pat.name) = LOWER($3) AND $3 != '')
+       ORDER BY r.record_date DESC, r.created_at DESC`,
+      [patientId, pEm, pName]
+    );
+    res.status(200).json({ success: true, count: result.rows.length, records: result.rows });
+  } catch (err) {
+    console.error('Fetch My Medical Records Error:', err);
+    res.status(500).json({ success: false, message: 'Server error retrieving medical records' });
+  }
+});
+
+// @route   GET /api/patients/me/prescriptions
+// @desc    Get prescriptions for logged-in patient
+router.get('/me/prescriptions', authenticatePatientToken, async (req, res) => {
+  try {
+    const patientId = req.patient.id;
+    const patientEmail = req.patient.email || '';
+    
+    const pInfo = await query('SELECT name, email FROM patients WHERE id = $1 OR LOWER(email) = LOWER($2)', [patientId, patientEmail]);
+    const pName = pInfo.rows[0]?.name || '';
+    const pEm = pInfo.rows[0]?.email || patientEmail;
+
+    const result = await query(
+      `SELECT DISTINCT p.* FROM prescriptions p
+       LEFT JOIN patients pat ON pat.id = p.patient_id
+       WHERE p.patient_id = $1
+          OR (pat.email IS NOT NULL AND LOWER(pat.email) = LOWER($2) AND $2 != '')
+          OR (pat.name IS NOT NULL AND LOWER(pat.name) = LOWER($3) AND $3 != '')
+       ORDER BY p.prescribed_date DESC, p.created_at DESC`,
+      [patientId, pEm, pName]
+    );
+    res.status(200).json({ success: true, count: result.rows.length, prescriptions: result.rows });
+  } catch (err) {
+    console.error('Fetch My Prescriptions Error:', err);
+    res.status(500).json({ success: false, message: 'Server error retrieving prescriptions' });
+  }
+});
+
+// @route   GET /api/patients/me/vitals-history
+// @desc    Get historical recorded vitals from completed appointments and AI analyses
+router.get('/me/vitals-history', authenticatePatientToken, async (req, res) => {
+  try {
+    const patientId = req.patient.id;
+    const historyMap = new Map();
+
+    // 1. Fetch appointment vitals
+    const apptResult = await query(
+      `SELECT appointment_date, vitals FROM appointments
+       WHERE patient_id = $1 AND vitals IS NOT NULL
+       ORDER BY appointment_date DESC`,
+      [patientId]
+    );
+
+    for (const row of apptResult.rows) {
+      const dateStr = row.appointment_date ? new Date(row.appointment_date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+      const v = typeof row.vitals === 'string' ? JSON.parse(row.vitals) : row.vitals;
+      if (v && typeof v === 'object' && !historyMap.has(dateStr)) {
+        historyMap.set(dateStr, {
+          date: dateStr,
+          source: 'appointment',
+          blood_glucose: v.blood_glucose ?? v.bloodGlucose ?? null,
+          hrv: v.hrv ?? null,
+          spo2: v.spo2 ?? null,
+          temp: v.temp ?? null,
+          sleep: v.sleep ?? null,
+          rhr: v.rhr ?? null
+        });
+      }
+    }
+
+    // 2. Fetch AI analysis vitals
+    const aiResult = await query(
+      `SELECT created_at, vitals_input FROM ai_analysis_results
+       WHERE patient_id = $1
+       ORDER BY created_at DESC`,
+      [patientId]
+    );
+
+    for (const row of aiResult.rows) {
+      const dateStr = row.created_at ? new Date(row.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+      const v = typeof row.vitals_input === 'string' ? JSON.parse(row.vitals_input) : row.vitals_input;
+      if (v && typeof v === 'object' && !historyMap.has(dateStr)) {
+        historyMap.set(dateStr, {
+          date: dateStr,
+          source: 'ai_analysis',
+          blood_glucose: v.blood_glucose ?? v.bloodGlucose ?? null,
+          hrv: v.hrv ?? null,
+          spo2: v.spo2 ?? null,
+          temp: v.temp ?? null,
+          sleep: v.sleep ?? null,
+          rhr: v.rhr ?? null
+        });
+      }
+    }
+
+    const vitalsList = Array.from(historyMap.values()).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    res.status(200).json({ success: true, count: vitalsList.length, vitals: vitalsList });
+  } catch (err) {
+    console.error('Fetch Vitals History Error:', err);
+    res.status(500).json({ success: false, message: 'Server error retrieving vitals history' });
+  }
+});
+
+// @route   GET /api/patients
+// @desc    List all patients with optional search queries
+router.get('/', authenticateToken, async (req, res) => {
+  const { search, condition } = req.query;
+  
+  try {
+    let sql = 'SELECT * FROM patients';
+    const params = [];
+    const conditions = [];
+
+    if (search) {
+      params.push(`%${search}%`);
+      conditions.push(`(name ILIKE $${params.length} OR condition ILIKE $${params.length} OR phone ILIKE $${params.length} OR email ILIKE $${params.length})`);
+    }
+
+    if (condition && condition !== 'all') {
+      params.push(`%${condition}%`);
+      conditions.push(`condition ILIKE $${params.length}`);
+    }
+
+    if (conditions.length > 0) {
+      sql += ' WHERE ' + conditions.join(' AND ');
+    }
+
+    sql += ' ORDER BY name ASC';
+
+    const result = await query(sql, params);
+    res.status(200).json({ success: true, count: result.rows.length, patients: result.rows });
+  } catch (err) {
+    console.error('List Patients Error:', err);
+    res.status(500).json({ success: false, message: 'Server error listing patients' });
+  }
+});
+
+// @route   GET /api/patients/my-patients
+// @desc    List patients assigned to/who have appointments with the logged-in doctor
+router.get('/my-patients', authenticateToken, async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT DISTINCT p.* FROM patients p
+       JOIN appointments a ON a.patient_id = p.id
+       WHERE a.doctor_id = $1
+       ORDER BY p.name ASC`,
+      [req.user.id]
+    );
+    res.status(200).json({ success: true, count: result.rows.length, patients: result.rows });
+  } catch (err) {
+    console.error('List My Patients Error:', err);
+    res.status(500).json({ success: false, message: 'Server error listing doctor patients' });
+  }
+});
+
+// @route   GET /api/patients/:id
+// @desc    Get detailed record of a single patient
+router.get('/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const result = await query('SELECT * FROM patients WHERE id = $1', [id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Patient not found' });
+    }
+
+    res.status(200).json({ success: true, patient: result.rows[0] });
+  } catch (err) {
+    console.error('Fetch Patient Detail Error:', err);
+    res.status(500).json({ success: false, message: 'Server error fetching patient details' });
+  }
+});
+
+// @route   POST /api/patients
+// @desc    Create/Add a new patient record
+router.post('/', authenticateToken, async (req, res) => {
+  const { name, age, gender, dob, phone, email, address, condition } = req.body;
+
+  if (!name) {
+    return res.status(400).json({ success: false, message: 'Patient name is required.' });
+  }
+
+  try {
+    const result = await query(
+      `INSERT INTO patients (name, age, gender, dob, phone, email, address, condition)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING *`,
+      [name, age, gender, dob, phone, email, address, condition]
+    );
+
+    res.status(201).json({
+      success: true,
+      message: 'Patient record created successfully',
+      patient: result.rows[0]
+    });
+  } catch (err) {
+    console.error('Create Patient Error:', err);
+    res.status(500).json({ success: false, message: 'Server error creating patient record' });
+  }
+});
+
+// @route   PUT /api/patients/:id
+// @desc    Update editable properties of a patient record
+router.put('/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { name, age, gender, dob, phone, email, address, condition } = req.body;
+
+  try {
+    const checkResult = await query('SELECT id FROM patients WHERE id = $1', [id]);
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Patient not found' });
+    }
+
+    const result = await query(
+      `UPDATE patients
+       SET name = COALESCE($1, name),
+           age = COALESCE($2, age),
+           gender = COALESCE($3, gender),
+           dob = COALESCE($4, dob),
+           phone = COALESCE($5, phone),
+           email = COALESCE($6, email),
+           address = COALESCE($7, address),
+           condition = COALESCE($8, condition),
+           updated_at = NOW()
+       WHERE id = $9
+       RETURNING *`,
+      [name, age, gender, dob, phone, email, address, condition, id]
+    );
+
+    res.status(200).json({
+      success: true,
+      message: 'Patient record updated successfully',
+      patient: result.rows[0]
+    });
+  } catch (err) {
+    console.error('Update Patient Error:', err);
+    res.status(500).json({ success: false, message: 'Server error updating patient record' });
+  }
+});
+
+// @route   DELETE /api/patients/:id
+// @desc    Remove a patient record
+router.delete('/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const result = await query('DELETE FROM patients WHERE id = $1 RETURNING id', [id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Patient not found' });
+    }
+
+    res.status(200).json({ success: true, message: 'Patient record deleted successfully' });
+  } catch (err) {
+    console.error('Delete Patient Error:', err);
+    res.status(500).json({ success: false, message: 'Server error deleting patient record' });
+  }
+});
+
+// @route   GET /api/patients/:id/records
+// @desc    Get clinical history records of a patient
+router.get('/:id/records', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await query(
+      'SELECT * FROM medical_records WHERE patient_id = $1 ORDER BY record_date DESC',
+      [id]
+    );
+    res.status(200).json({ success: true, count: result.rows.length, records: result.rows });
+  } catch (err) {
+    console.error('Fetch Patient Records Error:', err);
+    res.status(500).json({ success: false, message: 'Server error retrieving clinical history' });
+  }
+});
+
+// @route   POST /api/patients/:id/records
+// @desc    Add a medical record for a patient
+router.post('/:id/records', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { diagnosis, treatment, notes, vitals, patientName } = req.body;
+
+  try {
+    let doctorId = req.user?.id;
+    const docCheck = await query('SELECT id FROM doctors WHERE id = $1', [doctorId]).catch(() => ({ rows: [] }));
+    if (docCheck.rows.length === 0) {
+      const firstDoc = await query('SELECT id FROM doctors LIMIT 1');
+      if (firstDoc.rows.length > 0) {
+        doctorId = firstDoc.rows[0].id;
+      }
+    }
+
+    let targetPatientId = id;
+
+    // Verify patient UUID exists
+    const patientCheck = await query('SELECT id FROM patients WHERE id = $1', [targetPatientId]).catch(() => ({ rows: [] }));
+    if (patientCheck.rows.length === 0) {
+      const nameSearch = await query('SELECT id FROM patients WHERE LOWER(name) = LOWER($1)', [patientName || targetPatientId]);
+      if (nameSearch.rows.length > 0) {
+        targetPatientId = nameSearch.rows[0].id;
+      } else {
+        const newP = await query(
+          `INSERT INTO patients (name, gender, condition) VALUES ($1, 'Other', $2) RETURNING id`,
+          [patientName || 'Patient', diagnosis || 'General Consultation']
+        );
+        targetPatientId = newP.rows[0].id;
+      }
+    }
+
+    const result = await query(
+      `INSERT INTO medical_records (patient_id, doctor_id, record_type, diagnosis, notes, vitals, record_date)
+       VALUES ($1, $2, 'Consultation', $3, $4, $5, CURRENT_DATE)
+       RETURNING *`,
+      [targetPatientId, doctorId, diagnosis || 'Consultation Record', notes || treatment || null, vitals ? JSON.stringify(vitals) : null]
+    );
+
+    res.status(201).json({
+      success: true,
+      message: 'Medical record added successfully',
+      record: result.rows[0]
+    });
+  } catch (err) {
+    console.error('Create Medical Record Error:', err);
+    res.status(500).json({ success: false, message: 'Server error creating medical record' });
+  }
+});
+
+// @route   GET /api/patients/:id/prescriptions
+// @desc    Get written prescription logs of a patient
+router.get('/:id/prescriptions', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await query(
+      'SELECT * FROM prescriptions WHERE patient_id = $1 ORDER BY prescribed_date DESC',
+      [id]
+    );
+    res.status(200).json({ success: true, count: result.rows.length, prescriptions: result.rows });
+  } catch (err) {
+    console.error('Fetch Patient Prescriptions Error:', err);
+    res.status(500).json({ success: false, message: 'Server error retrieving prescriptions' });
+  }
+});
+
+// @route   POST /api/patients/:id/prescriptions
+// @desc    Add a prescription for a patient
+router.post('/:id/prescriptions', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { medication, dosage, instructions, patientName } = req.body;
+
+  if (!medication) {
+    return res.status(400).json({ success: false, message: 'Medication is required' });
+  }
+
+  try {
+    let doctorId = req.user?.id;
+    const docCheck = await query('SELECT id FROM doctors WHERE id = $1', [doctorId]).catch(() => ({ rows: [] }));
+    if (docCheck.rows.length === 0) {
+      const firstDoc = await query('SELECT id FROM doctors LIMIT 1');
+      if (firstDoc.rows.length > 0) {
+        doctorId = firstDoc.rows[0].id;
+      }
+    }
+
+    let targetPatientId = id;
+
+    const patientCheck = await query('SELECT id FROM patients WHERE id = $1', [targetPatientId]).catch(() => ({ rows: [] }));
+    if (patientCheck.rows.length === 0) {
+      const nameSearch = await query('SELECT id FROM patients WHERE LOWER(name) = LOWER($1)', [patientName || targetPatientId]);
+      if (nameSearch.rows.length > 0) {
+        targetPatientId = nameSearch.rows[0].id;
+      } else {
+        const newP = await query(
+          `INSERT INTO patients (name, gender) VALUES ($1, 'Other') RETURNING id`,
+          [patientName || 'Patient']
+        );
+        targetPatientId = newP.rows[0].id;
+      }
+    }
+
+    const result = await query(
+      `INSERT INTO prescriptions (patient_id, doctor_id, medication, dosage, instructions, prescribed_date)
+       VALUES ($1, $2, $3, $4, $5, CURRENT_DATE)
+       RETURNING *`,
+      [targetPatientId, doctorId, medication, dosage || null, instructions || null]
+    );
+
+    res.status(201).json({
+      success: true,
+      message: 'Prescription added successfully',
+      prescription: result.rows[0]
+    });
+  } catch (err) {
+    console.error('Create Prescription Error:', err);
+    res.status(500).json({ success: false, message: 'Server error creating prescription' });
+  }
+});
+
+export default router;
