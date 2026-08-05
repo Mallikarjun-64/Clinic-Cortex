@@ -93,8 +93,13 @@ export function Appointments() {
   }, [activeTab, filterType]);
 
   const handleStartSession = (apt: any) => {
+    if (apt.type === "Video" || apt.visit_type === "Video" || apt.visitType === "Video") {
+      navigate(`/dashboard/virtual-consultation?appointmentId=${apt.id}`, { state: { appointment: apt } });
+      return;
+    }
+
     setEditingAppt(apt);
-    setEditStatus(apt.status === "Completed" ? "Completed" : "Completed");
+    setEditStatus("Completed");
     setEditCondition(apt.condition || "");
     setEditNotes(apt.notes || "");
     
