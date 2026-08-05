@@ -30,7 +30,7 @@ export const appointmentValidationRules = [
   body('patientName').notEmpty().withMessage('Patient Name is required'),
   body('visitType').isIn(['Clinic', 'Video', 'Home']).withMessage('Invalid visit type'),
   body('date').isDate().withMessage('Appointment Date must be a valid YYYY-MM-DD date'),
-  body('time').matches(/^([01]\d|2[0-3]):([0-5]\d)(:[0-5]\d)?$/).withMessage('Appointment Time must be in valid HH:MM or HH:MM:SS format'),
+  body('time').matches(/^([0-1]?\d|2[0-3]):[0-5]\d(:[0-5]\d)?(\s?[AP]M)?$/i).withMessage('Appointment Time must be a valid time (e.g. 10:30 AM or 10:30)'),
   runValidation
 ];
 
