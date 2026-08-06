@@ -4,7 +4,7 @@ import {
   Calendar, Search, Filter, Video, Home as HomeIcon, 
   Building2, MoreVertical, X, CheckCircle2, 
   Droplets, Heart, Activity, Thermometer, Moon,
-  Pill, Plus, Trash2, Edit, FileText
+  Pill, Plus, Trash2, Edit, FileText, PhoneCall
 } from "lucide-react";
 import { Appointment, loadAppointments, saveAppointments } from "../lib/appointmentData";
 import { api } from "../lib/api";
@@ -227,6 +227,34 @@ export function Appointments() {
       triggerToast(err.message || "API delete appointment error");
     }
     setOpenOptionsId(null);
+  };
+
+  const handleRecallPatient = async (apt: any) => {
+    setOpenOptionsId(null);
+    try {
+      // 1. Update status to In-Progress in PostgreSQL
+      await api.patch(`/appointments/${apt.id}/status`, { status: "In-Progress" });
+
+      // 2. Send real-time recall notification to Patient Portal
+      const patId = apt.patient_id || apt.patientId;
+      await api.post('/notifications', {
+        patientId: patId,
+        doctorId: apt.doctor_id || apt.doctorId,
+        appointmentId: apt.id,
+        patientName: apt.patient_name || apt.patient,
+        title: "Doctor Recalled Your Video Call",
+        body: "Dr. Mallikarjun is recalling you to rejoin your video consultation call. Click to join now!",
+        category: "Urgent",
+        notificationType: "video_call"
+      }).catch((err) => console.warn("Recall notification error", err));
+
+      triggerToast(`Recalling patient ${apt.patient || apt.patient_name || ''}... Launching video call room.`);
+
+      // 3. Navigate doctor directly to Virtual Consultation room
+      navigate(`/dashboard/virtual-consultation?appointmentId=${apt.id}`, { state: { appointment: apt } });
+    } catch (err: any) {
+      triggerToast(err.message || "Failed to recall patient for video call");
+    }
   };
 
   const handleConfirmReschedule = async () => {
@@ -483,18 +511,27 @@ export function Appointments() {
                             <MoreVertical size={16} />
                           </button>
                           {openOptionsId === apt.id && (
-                            <div className="absolute right-0 top-full mt-2 w-44 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-xl z-30 overflow-hidden">
+                            <div className="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl z-30 overflow-hidden">
+                              {(apt.type === "Video" || apt.visit_type === "Video" || apt.visitType === "Video") && (
+                                <button
+                                  onClick={() => handleRecallPatient(apt)}
+                                  className="w-full text-left px-4 py-3 text-xs font-bold text-[#163CC7] dark:text-[#4F6FE5] hover:bg-blue-50 dark:hover:bg-blue-950/40 transition-colors border-b border-slate-100 dark:border-slate-800 flex items-center gap-2"
+                                >
+                                  <PhoneCall size={14} className="animate-pulse" />
+                                  <span>Recall Patient</span>
+                                </button>
+                              )}
                               {activeTab === "upcoming" && (
                                 <button
                                   onClick={() => handleCancelAppointment(apt.id)}
-                                  className="w-full text-left px-4 py-3 text-sm font-bold text-rose-600 dark:text-rose-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                  className="w-full text-left px-4 py-3 text-xs font-bold text-rose-600 dark:text-rose-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors border-b border-slate-100 dark:border-slate-800"
                                 >
                                   Cancel Appointment
                                 </button>
                               )}
                               <button
                                 onClick={() => handleDeleteAppointment(apt.id)}
-                                className="w-full text-left px-4 py-3 text-sm font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                className="w-full text-left px-4 py-3 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                               >
                                 Delete Appointment
                               </button>

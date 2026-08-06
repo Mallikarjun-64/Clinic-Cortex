@@ -52,6 +52,9 @@ export function VirtualConsultation() {
       if (active && active.status !== "Completed" && active.status !== "Cancelled") {
         setActiveAppointment(active);
         setNotes(active.notes || "");
+        if (active.status === "In-Progress") {
+          setCallStatus("active");
+        }
 
         // Initialize Messaging Thread with Patient
         const patId = active.patient_id || active.patientId || active.id;
