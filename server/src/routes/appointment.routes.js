@@ -306,10 +306,22 @@ router.patch('/:id/status', authenticateEitherUser, async (req, res) => {
       return res.status(404).json({ success: false, message: 'Appointment not found' });
     }
 
+    const updatedApt = result.rows[0];
+
+    // If appointment is completed or cancelled, automatically mark video call notifications as read
+    if (status === 'Completed' || status === 'Cancelled') {
+      await query(
+        `UPDATE notifications
+         SET is_read = true
+         WHERE appointment_id = $1 OR (patient_id = $2 AND notification_type = 'video_call')`,
+        [id, updatedApt.patient_id]
+      ).catch((e) => console.warn('Notification auto-read error', e));
+    }
+
     res.status(200).json({
       success: true,
       message: `Appointment status updated to ${status}`,
-      appointment: result.rows[0]
+      appointment: updatedApt
     });
   } catch (err) {
     console.error('Patch Status Error:', err);

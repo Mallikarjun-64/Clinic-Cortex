@@ -53,6 +53,9 @@ export function AppShell() {
           );
           if (callNotif) {
             setActiveCallNotification(callNotif);
+          } else {
+            setActiveCallNotification(null);
+            setShowCallModal(false);
           }
         }
       } catch (err) {
