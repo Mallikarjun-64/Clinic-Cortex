@@ -228,12 +228,22 @@ router.post('/', authenticateEitherUser, appointmentValidationRules, async (req,
 
 // @route   PUT /api/appointments/:id
 // @desc    Reschedule/update details of an appointment
-router.put('/:id', authenticateToken, async (req, res) => {
+router.put('/:id', authenticateEitherUser, async (req, res) => {
   const { id } = req.params;
   const { date, time, visitType, condition, notes, vitals, status } = req.body;
 
   try {
-    const check = await query('SELECT id FROM appointments WHERE id = $1 AND doctor_id = $2', [id, req.user.id]);
+    let checkSql = 'SELECT id FROM appointments WHERE id = $1';
+    let checkParams = [id];
+    if (req.isDoctor) {
+      checkSql += ' AND (doctor_id = $2 OR doctor_id IS NULL)';
+      checkParams.push(req.user.id);
+    } else if (req.isPatient) {
+      checkSql += ' AND (patient_id = $2 OR patient_id IS NULL)';
+      checkParams.push(req.patient.id);
+    }
+
+    const check = await query(checkSql, checkParams);
     if (check.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Appointment not found' });
     }
@@ -248,7 +258,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
            vitals = COALESCE($6, vitals),
            status = COALESCE($7, status),
            updated_at = NOW()
-       WHERE id = $8 AND doctor_id = $9
+       WHERE id = $8
        RETURNING *`,
       [
         date || null,
@@ -258,8 +268,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
         notes || null,
         vitals ? (typeof vitals === 'string' ? vitals : JSON.stringify(vitals)) : null,
         status || null,
-        id,
-        req.user.id
+        id
       ]
     );
 
@@ -276,7 +285,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
 
 // @route   PATCH /api/appointments/:id/status
 // @desc    Quick update status (Scheduled, Confirmed, Waiting, Completed, Cancelled, Missed)
-router.patch('/:id/status', authenticateToken, async (req, res) => {
+router.patch('/:id/status', authenticateEitherUser, async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
 
@@ -288,19 +297,31 @@ router.patch('/:id/status', authenticateToken, async (req, res) => {
     const result = await query(
       `UPDATE appointments
        SET status = $1, updated_at = NOW()
-       WHERE id = $2 AND doctor_id = $3
+       WHERE id = $2
        RETURNING *`,
-      [status, id, req.user.id]
+      [status, id]
     );
 
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Appointment not found' });
     }
 
+    const updatedApt = result.rows[0];
+
+    // If appointment is completed or cancelled, automatically mark video call notifications as read
+    if (status === 'Completed' || status === 'Cancelled') {
+      await query(
+        `UPDATE notifications
+         SET is_read = true
+         WHERE appointment_id = $1 OR (patient_id = $2 AND notification_type = 'video_call')`,
+        [id, updatedApt.patient_id]
+      ).catch((e) => console.warn('Notification auto-read error', e));
+    }
+
     res.status(200).json({
       success: true,
       message: `Appointment status updated to ${status}`,
-      appointment: result.rows[0]
+      appointment: updatedApt
     });
   } catch (err) {
     console.error('Patch Status Error:', err);

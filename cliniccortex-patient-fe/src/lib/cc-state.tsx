@@ -9,7 +9,7 @@ export type Screen =
   | "bills" | "discharge" | "wallet" | "transactions" | "ai-analyzer"
   | "guidelines" | "about" | "feedback" | "settings" | "location" | "emergency"
   | "search" | "pharmacy" | "profile" | "chat" | "vitals" | "glucose"
-  | "doctor-detail" | "booking";
+  | "doctor-detail" | "booking" | "notifications";
 
 export type Flow =
   | "gateway" | "language" | "identity" | "login" | "signup" | "app";

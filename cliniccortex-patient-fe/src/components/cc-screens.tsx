@@ -6,6 +6,7 @@ import {
   Sparkles, Search, Mic, ChevronDown, ChevronUp, Sun, MoonStar, Languages,
   Shield, FileText, Pencil, Stethoscope, Home as HomeIcon, MessageSquare,
   Siren, MapPinned, CheckCircle2, XCircle, RotateCcw, Bot,
+  MicOff, VideoOff, MessageCircle, PhoneOff, Bell,
 } from "lucide-react";
 import { useCC, LANGUAGES, type Screen } from "@/lib/cc-state";
 import { api } from "@/lib/api";
@@ -245,9 +246,23 @@ export function AppointmentsScreen() {
                   </div>
                 </div>
                 <div className="mt-4 grid grid-cols-3 gap-2">
-                  <button className="rounded-xl cc-grad-deep text-white text-xs font-semibold py-2">Generate Queue</button>
-                  <button className="rounded-xl border text-xs font-semibold py-2"><RotateCcw className="w-3 h-3 inline mr-1" />Reschedule</button>
-                  <button className="rounded-xl border text-xs font-semibold py-2 text-red-500"><XCircle className="w-3 h-3 inline mr-1" />Cancel</button>
+                  <button onClick={() => alert(`Queue position #3 generated for ${a.patient_name || 'you'}.`)} className="rounded-xl cc-grad-deep text-white text-xs font-semibold py-2">Generate Queue</button>
+                  <button onClick={() => { setSelectedDoctorId(a.doctor_id); setScreen("booking"); }} className="rounded-xl border text-xs font-semibold py-2"><RotateCcw className="w-3 h-3 inline mr-1" />Reschedule</button>
+                  <button
+                    onClick={async () => {
+                      if (!confirm("Are you sure you want to cancel this appointment?")) return;
+                      try {
+                        await api.patch(`/appointments/${a.id}/status`, { status: "Cancelled" });
+                        alert("Appointment cancelled successfully.");
+                        setAppointments(prev => prev.filter(item => item.id !== a.id));
+                      } catch (err: any) {
+                        alert(err.message || "Failed to cancel appointment");
+                      }
+                    }}
+                    className="rounded-xl border text-xs font-semibold py-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+                  >
+                    <XCircle className="w-3 h-3 inline mr-1" />Cancel
+                  </button>
                 </div>
               </div>
             ))
@@ -433,32 +448,100 @@ export function DoctorDetail() {
 }
 
 export function BookingScreen() {
-  const { selectedDoctorId, setScreen, user } = useCC();
-  const [day, setDay] = useState(4);
+  const { selectedDoctorId, setSelectedDoctorId, setScreen, user } = useCC();
+
+  // Helper to format Date -> YYYY-MM-DD
+  const formatIsoDate = (d: Date) => {
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  // Auto-fetch Today's real date on mount
+  const [selectedDate, setSelectedDate] = useState(() => formatIsoDate(new Date()));
   const [slot, setSlot] = useState("10:30 AM");
+  const [visitType, setVisitType] = useState<"Clinic" | "Video" | "Home">("Clinic");
+  const [patientName, setPatientName] = useState(user?.name || "Akku K");
+  const [phone, setPhone] = useState(user?.phone || "");
+  const [age, setAge] = useState(user?.age ? String(user.age) : "28");
+  const [condition, setCondition] = useState("General Consult");
+  const [notes, setNotes] = useState("");
+  const [doctorsList, setDoctorsList] = useState<any[]>([]);
+  const [doctorId, setDoctorId] = useState(selectedDoctorId || "");
   const [loading, setLoading] = useState(false);
 
-  const days = Array.from({ length: 14 }, (_, i) => i + 1);
+  useEffect(() => {
+    async function loadDoctors() {
+      try {
+        const res = await api.get('/doctors-directory');
+        if (res.success && Array.isArray(res.doctors) && res.doctors.length > 0) {
+          setDoctorsList(res.doctors);
+          if (!doctorId) {
+            setDoctorId(res.doctors[0].id);
+          }
+        }
+      } catch (err) {
+        console.warn("Could not fetch doctors directory for booking", err);
+      }
+    }
+    loadDoctors();
+  }, []);
+
+  const generateUpcomingDays = (startDateStr: string) => {
+    const daysArr = [];
+    const baseDate = new Date((startDateStr || formatIsoDate(new Date())) + 'T00:00:00');
+    for (let i = 0; i < 14; i++) {
+      const d = new Date(baseDate);
+      d.setDate(d.getDate() + i);
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      const isoString = `${yyyy}-${mm}-${dd}`;
+      const weekday = d.toLocaleDateString('en-US', { weekday: 'short' });
+      const monthName = d.toLocaleDateString('en-US', { month: 'short' });
+      const dayNum = String(d.getDate()).padStart(2, '0');
+      daysArr.push({ isoString, weekday, monthName, dayNum });
+    }
+    return daysArr;
+  };
+
   const slots = {
     Morning: ["08:00 AM", "09:00 AM", "10:30 AM", "11:00 AM"],
     Afternoon: ["12:00 PM", "01:30 PM", "02:00 PM"],
     Evening: ["05:00 PM", "06:30 PM", "07:00 PM"],
   };
 
+  const selectedDoc = doctorsList.find((d: any) => d.id === doctorId) || doctorsList[0];
+  const fee = visitType === "Video" ? 800 : visitType === "Home" ? 1500 : (selectedDoc?.clinic_fee || 1000);
+
   const handleConfirmBooking = async () => {
+    if (!patientName.trim()) {
+      alert("Please enter patient name.");
+      return;
+    }
+
     setLoading(true);
     try {
-      await api.post('/appointments', {
-        doctorId: selectedDoctorId || "8ee16766-3d23-4c91-91a5-e1ab8529f8f2",
-        patientName: user?.name || "Patient",
-        visitType: "Clinic",
-        date: `2026-11-${String(day).padStart(2, '0')}`,
-        time: slot === "10:30 AM" ? "10:30:00" : "12:00:00",
-        condition: "General Consult",
-        notes: "Booked via Patient Portal app"
+      const targetDoctorId = doctorId || (selectedDoc ? selectedDoc.id : (selectedDoctorId || "8ee16766-3d23-4c91-91a5-e1ab8529f8f2"));
+
+      const res = await api.post('/appointments', {
+        doctorId: targetDoctorId,
+        patientName: patientName.trim(),
+        patientAge: age ? parseInt(age, 10) : undefined,
+        visitType: visitType,
+        date: selectedDate,
+        time: slot,
+        condition: condition.trim() || "General Consult",
+        notes: notes.trim() ? `${notes.trim()}${phone ? ' (Phone: ' + phone + ')' : ''}` : (phone ? `Phone: ${phone}` : "Booked via Patient Portal")
       });
-      alert("Appointment booked successfully!");
-      setScreen("appointments");
+
+      if (res.success) {
+        alert("Appointment booked successfully! Your details have been sent to the Doctor Panel.");
+        setScreen("appointments");
+      } else {
+        alert(res.message || "Failed to book appointment");
+      }
     } catch (err: any) {
       alert(err.message || "Failed to book appointment");
     } finally {
@@ -467,40 +550,201 @@ export function BookingScreen() {
   };
 
   return (
-    <div className="pb-8">
-      <div className="px-5 pt-4">
-        <h1 className="text-2xl font-bold">Choose date & time</h1>
+    <div className="pb-8 max-w-xl mx-auto">
+      <div className="px-5 pt-4 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Book Appointment</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">Customize your booking details below</p>
+        </div>
+        <button onClick={() => setScreen("appointments")} className="px-3 py-1.5 rounded-xl border text-xs font-semibold">Cancel</button>
       </div>
-      <Section title="< November 2026 >">
-        <div className="flex gap-2 overflow-x-auto cc-scroll pb-2">
-          {days.map((dy) => {
-            const active = dy === day;
-            const wd = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][(dy + 6) % 7];
+
+      {/* Visit Type Selector */}
+      <Section title="Select Consultation Mode">
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            { id: "Clinic", label: "In-Clinic", icon: Stethoscope, color: "from-blue-500 to-indigo-600", desc: "Physical Visit" },
+            { id: "Video", label: "Tele-Consult", icon: Video, color: "from-emerald-500 to-teal-600", desc: "Online Call" },
+            { id: "Home", label: "Home Care", icon: HomeIcon, color: "from-amber-500 to-orange-600", desc: "Doctor at Home" },
+          ].map((typeItem) => {
+            const IconComp = typeItem.icon;
+            const isSelected = visitType === typeItem.id;
             return (
-              <button key={dy} onClick={() => setDay(dy)} className={`min-w-[58px] py-3 rounded-2xl flex flex-col items-center transition-all ${
-                active ? "cc-grad-deep text-white cc-shadow scale-105" : "bg-card border"
-              }`}>
-                <span className="text-[10px] uppercase">{wd}</span>
-                <span className="text-lg font-bold">{String(dy).padStart(2, "0")}</span>
+              <button
+                key={typeItem.id}
+                type="button"
+                onClick={() => setVisitType(typeItem.id as any)}
+                className={`border rounded-2xl p-3 flex flex-col items-center gap-1.5 transition-all ${
+                  isSelected ? "bg-primary/10 border-primary ring-2 ring-primary/20 scale-[1.02]" : "bg-card hover:bg-muted/40"
+                }`}
+              >
+                <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${typeItem.color} text-white flex items-center justify-center`}>
+                  <IconComp className="w-5 h-5" />
+                </div>
+                <span className="text-xs font-bold">{typeItem.label}</span>
+                <span className="text-[9px] text-muted-foreground">{typeItem.desc}</span>
               </button>
             );
           })}
         </div>
       </Section>
+
+      {/* Select Doctor */}
+      <Section title="Select Doctor">
+        <select
+          value={doctorId}
+          onChange={(e) => {
+            setDoctorId(e.target.value);
+            setSelectedDoctorId(e.target.value);
+          }}
+          className="w-full p-3 rounded-2xl bg-card border text-sm font-semibold outline-none"
+        >
+          {doctorsList.length > 0 ? (
+            doctorsList.map((doc: any) => (
+              <option key={doc.id} value={doc.id}>
+                Dr. {doc.first_name} {doc.last_name} ({doc.pg_specialization || 'General Specialist'})
+              </option>
+            ))
+          ) : (
+            <option value="">Dr. Specialist (General Medicine)</option>
+          )}
+        </select>
+      </Section>
+
+      {/* Editable Patient Info */}
+      <Section title="Patient Details (Editable)">
+        <div className="space-y-3">
+          <div>
+            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1 block">Patient Full Name *</label>
+            <input
+              type="text"
+              required
+              value={patientName}
+              onChange={(e) => setPatientName(e.target.value)}
+              placeholder="Enter patient full name..."
+              className="w-full p-3 rounded-2xl bg-card border text-sm font-bold outline-none focus:ring-2 focus:ring-primary/20"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1 block">Age</label>
+              <input
+                type="number"
+                value={age}
+                onChange={(e) => setAge(e.target.value)}
+                placeholder="e.g. 28"
+                className="w-full p-3 rounded-2xl bg-card border text-sm font-semibold outline-none"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1 block">Phone Number</label>
+              <input
+                type="text"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="e.g. +91 9876543210"
+                className="w-full p-3 rounded-2xl bg-card border text-sm font-semibold outline-none"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1 block">Condition / Reason for Visit</label>
+            <input
+              type="text"
+              value={condition}
+              onChange={(e) => setCondition(e.target.value)}
+              placeholder="e.g. Fever & Cough, Hypertension Checkup"
+              className="w-full p-3 rounded-2xl bg-card border text-sm font-semibold outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1 block">Consultation Notes for Doctor</label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Add optional notes or symptoms for the doctor..."
+              className="w-full p-3 rounded-2xl bg-card border text-sm outline-none h-20 resize-none"
+            />
+          </div>
+        </div>
+      </Section>
+
+      {/* Dynamic Date Picker & Selector */}
+      <Section title="Choose Appointment Date">
+        <div className="space-y-3">
+          <div className="flex items-center justify-between bg-card border p-3 rounded-2xl">
+            <div>
+              <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Selected Date</div>
+              <div className="text-sm font-bold text-primary">
+                {new Date(selectedDate + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold uppercase text-muted-foreground">Pick Month/Date:</span>
+              <input
+                type="date"
+                value={selectedDate}
+                min={formatIsoDate(new Date())}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="p-2 rounded-xl bg-background border text-xs font-bold outline-none cursor-pointer"
+              />
+            </div>
+          </div>
+
+          <div className="flex gap-2 overflow-x-auto cc-scroll pb-2">
+            {generateUpcomingDays(selectedDate).map((dObj) => {
+              const active = dObj.isoString === selectedDate;
+              return (
+                <button
+                  key={dObj.isoString}
+                  type="button"
+                  onClick={() => setSelectedDate(dObj.isoString)}
+                  className={`min-w-[62px] py-3 rounded-2xl flex flex-col items-center transition-all ${
+                    active ? "cc-grad-deep text-white cc-shadow scale-105" : "bg-card border hover:bg-muted/30"
+                  }`}
+                >
+                  <span className="text-[10px] uppercase font-bold">{dObj.weekday}</span>
+                  <span className="text-lg font-bold">{dObj.dayNum}</span>
+                  <span className="text-[9px] opacity-80">{dObj.monthName}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </Section>
+
+      {/* Time Slot Selector */}
       {Object.entries(slots).map(([k, vals]) => (
         <Section key={k} title={k}>
           <div className="flex flex-wrap gap-2">
             {vals.map((s) => (
-              <button key={s} onClick={() => setSlot(s)} className={`px-4 py-2 rounded-2xl text-sm font-medium transition-all ${
-                slot === s ? "cc-grad-deep text-white cc-shadow" : "bg-card border text-foreground"
-              }`}>{s}</button>
+              <button
+                key={s}
+                type="button"
+                onClick={() => setSlot(s)}
+                className={`px-4 py-2 rounded-2xl text-sm font-medium transition-all ${
+                  slot === s ? "cc-grad-deep text-white cc-shadow" : "bg-card border text-foreground"
+                }`}
+              >
+                {s}
+              </button>
             ))}
           </div>
         </Section>
       ))}
+
+      {/* Confirm Booking Button */}
       <div className="px-5 mt-8">
-        <button onClick={handleConfirmBooking} disabled={loading} className="w-full cc-grad-deep text-white font-semibold rounded-2xl py-3.5 flex justify-center items-center">
-          {loading ? <span className="animate-pulse">Booking…</span> : "Confirm booking · ₹1000"}
+        <button
+          type="button"
+          onClick={handleConfirmBooking}
+          disabled={loading}
+          className="w-full cc-grad-deep text-white font-semibold rounded-2xl py-3.5 flex justify-center items-center active:scale-[0.98] transition-transform"
+        >
+          {loading ? <span className="animate-pulse">Booking & Syncing to Doctor Panel…</span> : `Confirm booking · ₹${fee}`}
         </button>
       </div>
     </div>
@@ -1520,6 +1764,177 @@ export function SimpleListScreen({ title }: { title: string }) {
                 <ChevronRight className="w-4 h-4 text-muted-foreground" />
               </div>
             ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Live Video Call Modal ---------------- */
+export function VideoCallModal({ appointmentId, onClose }: { appointmentId?: string; onClose: () => void }) {
+  const { setScreen, user } = useCC();
+  const [callSeconds, setCallSeconds] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => setCallSeconds((s) => s + 1), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const mins = Math.floor(callSeconds / 60);
+  const secs = callSeconds % 60;
+  const timeStr = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  const userName = user?.name || "Patient";
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+      <div className="bg-card border rounded-3xl p-4 max-w-2xl w-full text-center space-y-4 relative cc-pop shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between text-xs text-muted-foreground px-2">
+          <span className="flex items-center gap-1.5 font-bold text-emerald-500">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> LIVE HD CALL • {timeStr}
+          </span>
+          <div className="flex items-center gap-2">
+            <button onClick={() => { onClose(); setScreen("chat"); }} className="px-3 py-1 rounded-xl bg-primary/10 text-primary text-xs font-semibold">
+              Open Chat
+            </button>
+            <button onClick={onClose} className="px-3 py-1 rounded-xl border text-xs font-semibold">
+              Close / End
+            </button>
+          </div>
+        </div>
+
+        {/* Real HD WebRTC Video Stream for Patient */}
+        <div className="h-[440px] rounded-2xl overflow-hidden bg-black shadow-inner border border-slate-800">
+          <iframe
+            src={`https://meet.jit.si/ClinicCortex_Consultation_${appointmentId || 'live'}#config.prejoinPageEnabled=false&config.startWithAudioMuted=false&config.startWithVideoMuted=false&userInfo.displayName=${encodeURIComponent(userName)}`}
+            allow="camera; microphone; display-capture; autoplay; clipboard-write; gUM"
+            className="w-full h-full border-0"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Notifications Screen ---------------- */
+export function NotificationsScreen() {
+  const { setScreen } = useCC();
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  async function loadNotifications() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.get('/notifications');
+      if (res.success && Array.isArray(res.notifications)) {
+        setNotifications(res.notifications);
+      } else {
+        setNotifications([]);
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to load notifications");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadNotifications();
+  }, []);
+
+  const markAsRead = async (id: string) => {
+    try {
+      await api.patch(`/notifications/${id}/read`, {});
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
+    } catch (err) {
+      console.warn("Mark read error", err);
+    }
+  };
+
+  const deleteNotif = async (id: string) => {
+    try {
+      await api.delete(`/notifications/${id}`);
+      setNotifications(prev => prev.filter(n => n.id !== id));
+    } catch (err) {
+      console.warn("Delete notif error", err);
+    }
+  };
+
+  return (
+    <div className="pb-8 max-w-xl mx-auto">
+      <div className="px-5 pt-4 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Notifications</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">Stay updated on call alerts & medical updates</p>
+        </div>
+        <button onClick={() => loadNotifications()} className="px-3 py-1.5 rounded-xl border text-xs font-semibold">
+          Refresh
+        </button>
+      </div>
+
+      <div className="px-5 mt-5">
+        {loading ? (
+          <div className="py-12 flex justify-center">
+            <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : error ? (
+          <div className="p-4 rounded-2xl bg-rose-50 text-rose-600 text-xs font-semibold">
+            {error}
+          </div>
+        ) : notifications.length === 0 ? (
+          <div className="bg-card border rounded-3xl p-8 text-center text-sm font-medium text-muted-foreground">
+            No notifications at this time.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {notifications.map((item) => {
+              const isCallNotif = item.notification_type === 'video_call' || item.category === 'Urgent' || (item.title && item.title.includes('Call'));
+              return (
+                <div
+                  key={item.id}
+                  className={`border rounded-2xl p-4 transition-all ${
+                    item.is_read ? "bg-card/60 opacity-80" : "bg-card border-primary/30 shadow-md ring-1 ring-primary/10"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white ${
+                        isCallNotif ? "bg-emerald-500 animate-pulse" : "cc-grad-deep"
+                      }`}>
+                        <Bell className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="text-sm font-bold">{item.title || "Notification"}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5">{item.body || item.message}</div>
+                        <div className="text-[10px] text-muted-foreground mt-2">
+                          {item.created_at ? new Date(item.created_at).toLocaleString() : "Just now"}
+                        </div>
+                      </div>
+                    </div>
+
+                    <button onClick={() => deleteNotif(item.id)} className="text-xs text-muted-foreground hover:text-red-500">
+                      ×
+                    </button>
+                  </div>
+
+                  {isCallNotif && (
+                    <div className="mt-3 pt-3 border-t flex justify-end">
+                      <button
+                        onClick={() => {
+                          markAsRead(item.id);
+                          setScreen("chat");
+                        }}
+                        className="px-4 py-2 rounded-xl cc-grad-deep text-white text-xs font-bold shadow-md"
+                      >
+                        Join Call / Chat with Doctor
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

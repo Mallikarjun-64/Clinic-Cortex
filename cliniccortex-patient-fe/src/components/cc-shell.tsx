@@ -1,11 +1,12 @@
-import { useState, type ReactNode } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import {
   Menu, MapPin, Bell, MessageCircle, Home, Search, Calendar, ShoppingCart,
   Settings as Cog, X, FileText, FlaskConical, ClipboardList, Receipt, LogOut,
   Wallet, ArrowRightLeft, Sparkles, BookOpen, Info, MessageSquareHeart,
-  Map, Siren, Stethoscope, Pill, ChevronLeft,
+  Map, Siren, Stethoscope, Pill, ChevronLeft, Video
 } from "lucide-react";
 import { useCC, type Screen } from "@/lib/cc-state";
+import { api } from "@/lib/api";
 import * as Screens from "./cc-screens";
 
 const TAB_KEYS: { id: Screen; key: string; icon: React.ElementType }[] = [
@@ -37,7 +38,35 @@ const DRAWER: { id: Screen; label: string; icon: React.ElementType; danger?: boo
 
 export function AppShell() {
   const { screen, setScreen, drawer, setDrawer, setFlow, t, user } = useCC();
-  const [notif] = useState(3);
+  const [notif, setNotif] = useState(3);
+  const [activeCallNotification, setActiveCallNotification] = useState<any>(null);
+  const [showCallModal, setShowCallModal] = useState(false);
+
+  useEffect(() => {
+    async function checkNotifications() {
+      try {
+        const res = await api.get('/notifications');
+        if (res.success && Array.isArray(res.notifications)) {
+          setNotif(res.notifications.length);
+          const callNotif = res.notifications.find((n: any) =>
+            !n.is_read && (n.notification_type === 'video_call' || n.category === 'Urgent' || (n.title && n.title.includes('Call')))
+          );
+          if (callNotif) {
+            setActiveCallNotification(callNotif);
+          } else {
+            setActiveCallNotification(null);
+            setShowCallModal(false);
+          }
+        }
+      } catch (err) {
+        // silent catch
+      }
+    }
+
+    checkNotifications();
+    const interval = setInterval(checkNotifications, 3000);
+    return () => clearInterval(interval);
+  }, []);
 
   const render = (): ReactNode => {
     switch (screen) {
@@ -65,6 +94,7 @@ export function AppShell() {
       case "feedback": return <Screens.FeedbackScreen />;
       case "location": return <Screens.LocationScreen />;
       case "emergency": return <Screens.EmergencyScreen />;
+      case "notifications": return <Screens.NotificationsScreen />;
       default: return <Screens.HomeScreen />;
     }
   };
@@ -80,6 +110,39 @@ export function AppShell() {
         </aside>
 
         <div className="flex flex-col min-h-screen">
+          {/* Call Alert Banner */}
+          {activeCallNotification && (
+            <div className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white px-4 py-3 flex items-center justify-between shadow-lg z-40 animate-bounce">
+              <div className="flex items-center gap-2 text-xs font-bold">
+                <Video className="w-4 h-4 animate-pulse" />
+                <span>{activeCallNotification.title || "Doctor is calling you for Video Consultation!"}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setShowCallModal(true);
+                    if (activeCallNotification.id) {
+                      api.patch(`/notifications/${activeCallNotification.id}/read`, {});
+                    }
+                  }}
+                  className="px-3 py-1 bg-white text-emerald-700 rounded-xl text-xs font-bold shadow-md hover:bg-emerald-50"
+                >
+                  Join Call
+                </button>
+                <button onClick={() => setActiveCallNotification(null)} className="p-1 hover:bg-white/20 rounded-lg">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {showCallModal && (
+            <Screens.VideoCallModal
+              appointmentId={activeCallNotification?.appointment_id || activeCallNotification?.appointmentId}
+              onClose={() => setShowCallModal(false)}
+            />
+          )}
+
           {/* Top bar */}
           <header className="sticky top-0 z-30 bg-card/80 backdrop-blur border-b">
             <div className="flex items-center gap-3 px-4 py-3">
@@ -101,7 +164,7 @@ export function AppShell() {
                 <div className="text-sm font-semibold leading-none">{t("hello")} {user?.name?.split(" ")[0] || "there"}!</div>
                 <div className="text-[11px] text-muted-foreground mt-0.5">Stay on top of your health</div>
               </div>
-              <button className="relative p-2 rounded-xl hover:bg-muted">
+              <button onClick={() => setScreen("notifications")} className="relative p-2 rounded-xl hover:bg-muted active:scale-95 transition-transform">
                 <Bell className="w-5 h-5" />
                 {notif > 0 && (
                   <span className="absolute top-1 right-1 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">{notif}</span>

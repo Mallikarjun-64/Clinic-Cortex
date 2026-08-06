@@ -84,7 +84,8 @@ app.get('/api/doctors-directory', async (req, res) => {
       `SELECT id, salutation, first_name, middle_name, last_name, profile_photo_url,
               professional_email, mobile, clinic_address, smc_name, pg_specialization,
               experience_years, clinic_fee, online_fee, consult_languages, bio
-       FROM doctors ORDER BY first_name ASC`
+       FROM doctors 
+       ORDER BY CASE WHEN first_name = 'Mallikarjun' OR professional_email = 'kgoudar.ms@gmail.com' THEN 0 ELSE 1 END, first_name ASC`
     );
     res.status(200).json({ success: true, count: result.rows.length, doctors: result.rows });
   } catch (err) {
