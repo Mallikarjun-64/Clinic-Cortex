@@ -1,7 +1,7 @@
 import express from 'express';
 import { query } from '../config/db.js';
 import { authenticateToken } from '../middleware/auth.js';
-import { appointmentValidationRules } from '../middleware/validate.js';
+import { appointmentValidationRules, validateUuidParam } from '../middleware/validate.js';
 import { verifyToken, verifyPatientToken } from '../utils/jwt.js';
 
 const router = express.Router();
@@ -326,6 +326,38 @@ router.patch('/:id/status', authenticateEitherUser, async (req, res) => {
   } catch (err) {
     console.error('Patch Status Error:', err);
     res.status(500).json({ success: false, message: 'Server error updating appointment status' });
+  }
+});
+
+// @route   DELETE /api/appointments/:id
+// @desc    Delete an appointment by ID
+router.delete('/:id', authenticateEitherUser, validateUuidParam, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    // 1. Delete associated notifications first for foreign key integrity
+    await query('DELETE FROM notifications WHERE appointment_id = $1', [id]).catch(() => {});
+
+    // 2. Delete appointment
+    const result = await query(
+      `DELETE FROM appointments
+       WHERE id = $1
+       RETURNING *`,
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Appointment not found' });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Appointment deleted successfully',
+      deletedAppointment: result.rows[0]
+    });
+  } catch (err) {
+    console.error('Delete Appointment Error:', err);
+    res.status(500).json({ success: false, message: 'Server error deleting appointment' });
   }
 });
 
