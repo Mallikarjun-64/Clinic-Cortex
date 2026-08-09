@@ -1487,39 +1487,186 @@ export function SettingsScreen() {
 
 /* ---------------- Profile ---------------- */
 export function ProfileScreen() {
-  const { user } = useCC();
+  const { user, setUser } = useCC();
+  const [isEditing, setIsEditing] = useState(false);
+  const [name, setName] = useState(user?.name || "");
+  const [email, setEmail] = useState(user?.email || "");
+  const [phone, setPhone] = useState(user?.phone || "");
+  const [age, setAge] = useState(user?.age ? String(user.age) : "");
+  const [address, setAddress] = useState(user?.address || "");
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<{ text: string; type: "success" | "error" } | null>(null);
+
+  useEffect(() => {
+    if (user) {
+      setName(user.name || "");
+      setEmail(user.email || "");
+      setPhone(user.phone || "");
+      setAge(user.age ? String(user.age) : "");
+      setAddress(user.address || "");
+    }
+  }, [user]);
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setMsg(null);
+    try {
+      const res = await api.put("/patient-auth/me", {
+        name: name.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+        age: age ? parseInt(age) : null,
+        address: address.trim()
+      });
+
+      if (res.success && res.patient) {
+        setUser(res.patient);
+        setMsg({ text: "Profile details updated successfully!", type: "success" });
+        setIsEditing(false);
+      } else {
+        setMsg({ text: res.message || "Failed to update profile", type: "error" });
+      }
+    } catch (err: any) {
+      setMsg({ text: err.message || "Server error updating profile", type: "error" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
-    <div>
-      <div className="cc-grad-deep px-5 pt-6 pb-12 rounded-b-[2.5rem] text-white">
+    <div className="space-y-4 pb-12">
+      <div className="cc-grad-deep px-5 pt-6 pb-12 rounded-b-[2.5rem] text-white relative">
         <div className="flex items-center gap-4">
           <div className="relative">
-            <div className="w-20 h-20 rounded-full bg-white/20 backdrop-blur flex items-center justify-center text-3xl font-bold">
+            <div className="w-20 h-20 rounded-full bg-white/20 backdrop-blur flex items-center justify-center text-3xl font-bold shadow-inner">
               {user?.name?.[0]?.toUpperCase() || "U"}
             </div>
-            <button className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-white text-primary flex items-center justify-center cc-shadow"><Pencil className="w-3.5 h-3.5" /></button>
+            <button
+              onClick={() => setIsEditing(!isEditing)}
+              className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-white text-primary flex items-center justify-center cc-shadow hover:scale-110 active:scale-95 transition-all"
+              title="Edit Profile"
+            >
+              <Pencil className="w-4 h-4 text-[#163CC7]" />
+            </button>
           </div>
-          <div>
+          <div className="flex-1">
             <div className="text-xl font-bold">{user?.name || "Guest"}</div>
             <div className="text-cyan-100 text-sm">{user?.email || "Not provided"}</div>
           </div>
+          <button
+            onClick={() => setIsEditing(!isEditing)}
+            className="px-3.5 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur text-white text-xs font-bold transition-all border border-white/20"
+          >
+            {isEditing ? "Cancel" : "Edit Profile"}
+          </button>
         </div>
       </div>
+
       <div className="px-5 -mt-6">
-        <div className="bg-card border rounded-3xl p-4 cc-shadow grid gap-3">
-          {[
-            { l: "Age", v: user?.age ? `${user.age} Years` : "Not provided" },
-            { l: "Email", v: user?.email || "Not provided" },
-            { l: "Phone number", v: user?.phone || "Not provided" },
-            { l: "ID", v: user?.id ? `CC-${user.id.slice(0, 8).toUpperCase()}` : "Not provided" },
-            { l: "Policy", v: "Coming soon" },
-            { l: "Residence", v: user?.address || "Not provided" },
-          ].map((f) => (
-            <div key={f.l} className="flex items-center justify-between text-sm border-b last:border-0 pb-2 last:pb-0">
-              <span className="text-muted-foreground">{f.l}</span>
-              <span className="font-semibold">{f.v}</span>
+        {msg && (
+          <div className={`p-3.5 rounded-2xl text-xs font-bold mb-4 shadow-sm ${
+            msg.type === "success" ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20" : "bg-red-500/10 text-red-600 border border-red-500/20"
+          }`}>
+            {msg.text}
+          </div>
+        )}
+
+        {isEditing ? (
+          <form onSubmit={handleSave} className="bg-card border rounded-3xl p-5 cc-shadow space-y-4">
+            <h3 className="text-sm font-bold text-foreground mb-1">Edit Profile Details</h3>
+            
+            <div className="space-y-1 text-left">
+              <label className="text-xs font-bold text-muted-foreground">Full Name</label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Enter your full name"
+                required
+                className="w-full px-3.5 py-2.5 bg-background border rounded-xl text-sm font-semibold focus:ring-2 focus:ring-primary/20 outline-none"
+              />
             </div>
-          ))}
-        </div>
+
+            <div className="space-y-1 text-left">
+              <label className="text-xs font-bold text-muted-foreground">Age (Years)</label>
+              <input
+                type="number"
+                value={age}
+                onChange={(e) => setAge(e.target.value)}
+                placeholder="e.g. 32"
+                className="w-full px-3.5 py-2.5 bg-background border rounded-xl text-sm font-semibold focus:ring-2 focus:ring-primary/20 outline-none"
+              />
+            </div>
+
+            <div className="space-y-1 text-left">
+              <label className="text-xs font-bold text-muted-foreground">Email Address</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="name@example.com"
+                required
+                className="w-full px-3.5 py-2.5 bg-background border rounded-xl text-sm font-semibold focus:ring-2 focus:ring-primary/20 outline-none"
+              />
+            </div>
+
+            <div className="space-y-1 text-left">
+              <label className="text-xs font-bold text-muted-foreground">Phone Number</label>
+              <input
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="10-digit mobile number"
+                className="w-full px-3.5 py-2.5 bg-background border rounded-xl text-sm font-semibold focus:ring-2 focus:ring-primary/20 outline-none"
+              />
+            </div>
+
+            <div className="space-y-1 text-left">
+              <label className="text-xs font-bold text-muted-foreground">Residence / Address</label>
+              <input
+                type="text"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                placeholder="Enter city / address"
+                className="w-full px-3.5 py-2.5 bg-background border rounded-xl text-sm font-semibold focus:ring-2 focus:ring-primary/20 outline-none"
+              />
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsEditing(false)}
+                className="flex-1 py-3 rounded-xl border text-xs font-bold hover:bg-muted transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="flex-1 py-3 rounded-xl cc-grad-deep text-white text-xs font-bold shadow-lg disabled:opacity-50 hover:opacity-95 transition-all"
+              >
+                {saving ? "Saving..." : "Save Changes"}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="bg-card border rounded-3xl p-5 cc-shadow grid gap-3.5">
+            {[
+              { l: "Age", v: user?.age ? `${user.age} Years` : "Not provided" },
+              { l: "Email", v: user?.email || "Not provided" },
+              { l: "Phone number", v: user?.phone || "Not provided" },
+              { l: "ID", v: user?.id ? `CC-${user.id.slice(0, 8).toUpperCase()}` : "Not provided" },
+              { l: "Policy", v: "Coming soon" },
+              { l: "Residence", v: user?.address || "Not provided" },
+            ].map((f) => (
+              <div key={f.l} className="flex items-center justify-between text-sm border-b last:border-0 pb-2.5 last:pb-0">
+                <span className="text-muted-foreground">{f.l}</span>
+                <span className="font-semibold text-foreground">{f.v}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
