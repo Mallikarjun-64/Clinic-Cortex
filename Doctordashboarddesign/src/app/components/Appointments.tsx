@@ -378,21 +378,6 @@ export function Appointments() {
           <h1 className="text-3xl font-bold text-slate-800 dark:text-white mb-1">Appointments</h1>
           <p className="text-slate-500 dark:text-slate-400 font-medium">Manage and track all appointments</p>
         </div>
-        <button 
-          onClick={() => {
-            setNewPatientName("");
-            setNewVisitType("Clinic");
-            setNewDate("");
-            setNewTime("10:00");
-            setNewCondition("");
-            setNewNotes("");
-            setIsNewApptOpen(true);
-          }}
-          className="px-6 py-3 rounded-xl bg-[#163CC7] text-white hover:opacity-90 transition-all flex items-center gap-2 shadow-xl shadow-blue-500/20"
-        >
-          <Calendar size={20} />
-          <span className="font-bold">New Appointment</span>
-        </button>
       </div>
 
       {/* Filters */}

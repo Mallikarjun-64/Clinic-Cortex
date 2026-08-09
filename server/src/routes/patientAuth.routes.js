@@ -161,6 +161,45 @@ router.get('/me', authenticatePatientToken, async (req, res) => {
   }
 });
 
+// @route   PUT /api/patient-auth/me
+// @desc    Update profile details for currently logged in patient
+router.put('/me', authenticatePatientToken, async (req, res) => {
+  const { name, email, phone, age, address, gender, dob } = req.body;
+
+  try {
+    const result = await query(
+      `UPDATE patients
+       SET name = COALESCE($1, name),
+           email = COALESCE($2, email),
+           phone = COALESCE($3, phone),
+           age = COALESCE($4, age),
+           address = COALESCE($5, address),
+           gender = COALESCE($6, gender),
+           dob = COALESCE($7, dob),
+           updated_at = NOW()
+       WHERE id = $8
+       RETURNING *`,
+      [name, email, phone, age ? parseInt(age) : null, address, gender, dob, req.patient.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Patient profile not found' });
+    }
+
+    const updatedPatient = result.rows[0];
+    delete updatedPatient.password_hash;
+
+    res.status(200).json({
+      success: true,
+      message: 'Profile updated successfully',
+      patient: updatedPatient
+    });
+  } catch (err) {
+    console.error('Update Patient Profile Error:', err);
+    res.status(500).json({ success: false, message: 'Server error updating profile' });
+  }
+});
+
 // @route   POST /api/patient-auth/feedback
 // @desc    Submit feedback/rating from logged in patient
 router.post('/feedback', authenticatePatientToken, async (req, res) => {
