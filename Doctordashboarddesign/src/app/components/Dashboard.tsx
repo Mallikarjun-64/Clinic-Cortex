@@ -39,6 +39,8 @@ export function Dashboard() {
 
   const [consultationRequests, setConsultationRequests] = useState<any[]>([]);
   const [appointmentStats, setAppointmentStats] = useState<any[]>([]);
+  const [revenue, setRevenue] = useState({ clinic: 0, online: 0, home: 0, total: 0 });
+  const [scrutinyItems, setScrutinyItems] = useState<any[]>([]);
 
   useEffect(() => {
     async function loadDashboardData() {
@@ -64,6 +66,16 @@ export function Dashboard() {
             type: r.request_type || "Virtual",
             priority: r.priority || "Medium"
           })));
+        }
+
+        const revRes = await api.get('/dashboard/revenue');
+        if (revRes.success && revRes.revenue) {
+          setRevenue(revRes.revenue);
+        }
+
+        const scrutinyRes = await api.get('/dashboard/scrutiny');
+        if (scrutinyRes.success && Array.isArray(scrutinyRes.items)) {
+          setScrutinyItems(scrutinyRes.items);
         }
       } catch (err) {
         console.warn("API load error for dashboard stats", err);
@@ -230,7 +242,9 @@ export function Dashboard() {
               <div className="flex justify-between items-start mb-4">
                 <div>
                   <p className="text-slate-500 dark:text-slate-400 text-sm group-hover:text-blue-500 transition-colors">Monthly Revenue</p>
-                  <h3 className="text-3xl font-bold mt-1 text-slate-800 dark:text-white">₹1,20,840.00</h3>
+                  <h3 className="text-3xl font-bold mt-1 text-slate-800 dark:text-white">
+                    ₹{revenue.total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </h3>
                 </div>
                 <div className="p-2 bg-blue-500/20 rounded-lg text-blue-600 group-hover:bg-[#163CC7] group-hover:text-white transition-all duration-300">
                   <TrendingUp size={20} />
@@ -239,40 +253,34 @@ export function Dashboard() {
               <div className="flex gap-4">
                 <div className="flex-1 bg-white/50 dark:bg-white/5 p-3 rounded-xl border border-white/20">
                   <p className="text-xs text-slate-500 dark:text-slate-400">Clinic Visits</p>
-                  <p className="text-lg font-semibold text-green-600">₹8,200</p>
+                  <p className="text-lg font-semibold text-green-600">₹{revenue.clinic.toLocaleString('en-IN')}</p>
                 </div>
                 <div className="flex-1 bg-white/50 dark:bg-white/5 p-3 rounded-xl border border-white/20">
                   <p className="text-xs text-slate-500 dark:text-slate-400">Virtual Cons.</p>
-                  <p className="text-lg font-semibold text-indigo-600">₹4,640</p>
+                  <p className="text-lg font-semibold text-indigo-600">₹{revenue.online.toLocaleString('en-IN')}</p>
                 </div>
               </div>
             </div>
 
-            <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
+            <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm space-y-3">
               <div className="flex items-center gap-2 mb-4">
                 <ShieldCheck className="text-orange-500" size={20} />
                 <h3 className="font-semibold text-slate-800 dark:text-white">Doctor's Scrutiny</h3>
               </div>
-              <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100">
-                <span className="text-sm dark:text-slate-300">Patient Record Updates</span>
-                <span className="text-xs bg-orange-100 text-orange-600 px-2 py-1 ml-2 rounded">12 Pending</span>
-              </div>
-              <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100">
-                <span className="text-sm dark:text-slate-300">Insurence claims</span>
-                <span className="text-xs bg-orange-100 text-orange-600 px-2 py-1 ml-2 rounded">4 Pending</span>
-              </div>  
-              <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100">
-                <span className="text-sm dark:text-slate-300">Patient Record Updates</span>
-                <span className="text-xs bg-orange-100 text-orange-600 px-2 py-1 ml-2 rounded">12 Pending</span>
-              </div>
-              <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100">
-                <span className="text-sm dark:text-slate-300">Patient Record Updates</span>
-                <span className="text-xs bg-orange-100 text-orange-600 px-2 py-1 ml-2 rounded">12 Pending</span>
-              </div>
-              <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100">
-                <span className="text-sm dark:text-slate-300">Patient Record Updates</span>
-                <span className="text-xs bg-orange-100 text-orange-600 px-2 py-1 ml-2 rounded">12 Pending</span>
-              </div>
+              {scrutinyItems.length > 0 ? (
+                scrutinyItems.map((item: any) => (
+                  <div key={item.id} className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                    <span className="text-sm dark:text-slate-300 font-medium">{item.label}</span>
+                    <span className="text-xs font-bold bg-orange-100 dark:bg-orange-950/40 text-orange-600 dark:text-orange-400 px-2.5 py-1 rounded-md">
+                      {item.count} {item.status}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-6 text-slate-400 text-xs font-medium">
+                  All scrutiny items up to date
+                </div>
+              )}
             </div>
           </div>
         </div>
