@@ -20,6 +20,7 @@ import patientAuthRouter from './routes/patientAuth.routes.js';
 import pharmacyRouter from './routes/pharmacy.routes.js';
 import walletRouter from './routes/wallet.routes.js';
 import aiAnalyzerRouter from './routes/aiAnalyzer.routes.js';
+import paymentRouter from './routes/payment.routes.js';
 
 import { query } from './config/db.js';
 
@@ -76,6 +77,7 @@ app.use('/api/patient-auth', patientAuthRouter);
 app.use('/api/pharmacy', pharmacyRouter);
 app.use('/api/wallet', walletRouter);
 app.use('/api/ai-analyzer', aiAnalyzerRouter);
+app.use('/api/payments', paymentRouter);
 
 // Public doctors directory endpoint for patient portal
 app.get('/api/doctors-directory', async (req, res) => {
