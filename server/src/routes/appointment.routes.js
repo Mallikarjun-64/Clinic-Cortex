@@ -3,6 +3,7 @@ import { query } from '../config/db.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { appointmentValidationRules, validateUuidParam } from '../middleware/validate.js';
 import { verifyToken, verifyPatientToken } from '../utils/jwt.js';
+import { processDoctorPayout } from './payment.routes.js';
 
 const router = express.Router();
 
@@ -316,6 +317,10 @@ router.patch('/:id/status', authenticateEitherUser, async (req, res) => {
          WHERE appointment_id = $1 OR (patient_id = $2 AND notification_type = 'video_call')`,
         [id, updatedApt.patient_id]
       ).catch((e) => console.warn('Notification auto-read error', e));
+
+      if (status === 'Completed') {
+        processDoctorPayout(id).catch((e) => console.warn('Doctor payout trigger error', e));
+      }
     }
 
     res.status(200).json({
