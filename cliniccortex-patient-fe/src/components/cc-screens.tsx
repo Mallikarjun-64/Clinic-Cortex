@@ -1224,10 +1224,11 @@ export function PharmacyScreen() {
 export function WalletScreen() {
   const [wallet, setWallet] = useState<any>({ balance: 0.00, subscription_status: 'Free' });
   const [plans, setPlans] = useState<any[]>([]);
+  const { setScreen } = useCC();
 
-  async function fetchWallet() {
+  const fetchWallet = async () => {
     try {
-      const res = await api.get('/wallet');
+      const res = await api.get('/payments/wallet');
       if (res.success && res.wallet) setWallet(res.wallet);
 
       const plansRes = await api.get('/wallet/plans');
@@ -1235,23 +1236,84 @@ export function WalletScreen() {
     } catch (err) {
       console.warn("Error fetching wallet details", err);
     }
-  }
+  };
+
+  const [showRechargeModal, setShowRechargeModal] = useState(false);
+  const [rechargeAmt, setRechargeAmt] = useState("500");
+  const [isProcessing, setIsProcessing] = useState(false);
 
   useEffect(() => {
     fetchWallet();
   }, []);
 
-  const handleTopUp = async () => {
-    const amt = prompt("Enter amount to add to wallet (₹):", "500");
-    if (!amt) return;
+  const handleRazorpayRecharge = async () => {
+    const numericAmt = parseFloat(rechargeAmt);
+    if (!numericAmt || numericAmt < 10) {
+      alert("Please enter a valid amount (minimum ₹10).");
+      return;
+    }
+
+    setIsProcessing(true);
     try {
-      const res = await api.post('/wallet/topup', { amount: parseFloat(amt) });
-      if (res.success) {
-        alert(res.message);
-        fetchWallet();
+      // 1. Request Payment Order from Express Backend
+      const orderRes = await api.post('/payments/create-order', { amount: numericAmt });
+      if (!orderRes.success || !orderRes.order) {
+        alert("Failed to initiate payment order.");
+        setIsProcessing(false);
+        return;
+      }
+
+      // 2. If live Razorpay Key exists, launch Razorpay Checkout Modal
+      if (typeof window !== 'undefined' && window.Razorpay && orderRes.keyId && orderRes.keyId !== 'rzp_test_demo_key') {
+        const options = {
+          key: orderRes.keyId,
+          amount: orderRes.order.amount,
+          currency: orderRes.order.currency || 'INR',
+          name: 'ClinicCortex Health',
+          description: 'Digital Wallet Recharge',
+          order_id: orderRes.order.id,
+          handler: async function (response: any) {
+            const verifyRes = await api.post('/payments/verify-recharge', {
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+              amount: numericAmt
+            });
+
+            if (verifyRes.success) {
+              alert(verifyRes.message || "Wallet recharged successfully!");
+              setShowRechargeModal(false);
+              fetchWallet();
+            } else {
+              alert(verifyRes.message || "Payment verification failed.");
+            }
+          },
+          theme: { color: '#163CC7' }
+        };
+
+        const rzp = new window.Razorpay(options);
+        rzp.open();
+      } else {
+        // Direct Verification Mode (Instant Test Top-Up)
+        const verifyRes = await api.post('/payments/verify-recharge', {
+          razorpay_order_id: orderRes.order.id,
+          razorpay_payment_id: `pay_sim_${Date.now()}`,
+          amount: numericAmt,
+          isTestMode: true
+        });
+
+        if (verifyRes.success) {
+          alert(verifyRes.message || `Successfully credited ₹${numericAmt} to your wallet!`);
+          setShowRechargeModal(false);
+          fetchWallet();
+        } else {
+          alert(verifyRes.message || "Failed to process wallet top-up.");
+        }
       }
     } catch (err: any) {
-      alert(err.message || "Top-up failed");
+      alert(err.message || "Payment processing error.");
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -1269,22 +1331,100 @@ export function WalletScreen() {
 
   return (
     <div>
-      <div className="px-5 pt-4">
+      <div className="px-5 pt-4 flex items-center justify-between">
         <h1 className="text-2xl font-bold">Digital Wallet</h1>
+        <button
+          onClick={() => setScreen("transactions")}
+          className="text-xs font-bold text-primary hover:underline flex items-center gap-1"
+        >
+          <span>View Ledger</span>
+          <ChevronRight className="w-3.5 h-3.5" />
+        </button>
       </div>
+
       <div className="px-5 mt-5">
         <div className="cc-grad-deep rounded-3xl p-6 text-white relative overflow-hidden cc-shadow">
           <div className="absolute -right-8 -top-8 w-40 h-40 rounded-full bg-white/10 blur-2xl" />
           <div className="relative">
             <div className="text-xs uppercase tracking-[0.3em] text-cyan-200">Available Balance</div>
             <div className="text-3xl font-bold mt-2">₹ {parseFloat(wallet.balance || 0).toFixed(2)}</div>
-            <div className="text-xs text-cyan-100 mt-1">Status: {wallet.subscription_status || 'Free'}</div>
+            <div className="text-xs text-cyan-100 mt-1">Status: {wallet.subscription_status || 'Free Member'}</div>
             <div className="mt-5 flex gap-3">
-              <button onClick={handleTopUp} className="bg-white text-primary px-4 py-2 rounded-xl text-sm font-semibold">Add money</button>
+              <button
+                onClick={() => setShowRechargeModal(true)}
+                className="bg-white text-primary px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-cyan-50 transition-all active:scale-95 flex items-center gap-2"
+              >
+                <CreditCard className="w-4 h-4" />
+                <span>Add Money / Recharge</span>
+              </button>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Recharge Modal */}
+      {showRechargeModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-card border rounded-3xl p-6 max-w-md w-full text-center space-y-5 relative cc-pop shadow-2xl">
+            <div className="flex items-center justify-between border-b pb-3">
+              <h3 className="text-lg font-bold text-foreground">Recharge Wallet Balance</h3>
+              <button onClick={() => setShowRechargeModal(false)} className="p-1 hover:bg-muted rounded-xl">
+                <X className="w-5 h-5 text-muted-foreground" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Select Preset Amount</label>
+              <div className="grid grid-cols-3 gap-2">
+                {["500", "1000", "2000"].map((preset) => (
+                  <button
+                    key={preset}
+                    onClick={() => setRechargeAmt(preset)}
+                    className={`py-2.5 rounded-xl text-xs font-bold border transition-all ${
+                      rechargeAmt === preset ? "bg-primary text-primary-foreground border-primary shadow-sm" : "bg-background border-border hover:bg-muted"
+                    }`}
+                  >
+                    + ₹{preset}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-1 text-left">
+              <label className="text-xs font-bold text-muted-foreground">Or Enter Custom Amount (₹)</label>
+              <input
+                type="number"
+                value={rechargeAmt}
+                onChange={(e) => setRechargeAmt(e.target.value)}
+                placeholder="Enter amount"
+                className="w-full px-4 py-3 bg-background border rounded-2xl text-lg font-extrabold text-center outline-none focus:ring-2 focus:ring-primary/20"
+              />
+            </div>
+
+            <div className="p-3 rounded-2xl bg-primary/10 border border-primary/20 text-xs text-primary font-semibold flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 shrink-0" />
+              <span>Secured by Razorpay • UPI, GPay, Cards & NetBanking</span>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setShowRechargeModal(false)}
+                className="flex-1 py-3 rounded-2xl border text-xs font-bold hover:bg-muted transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRazorpayRecharge}
+                disabled={isProcessing}
+                className="flex-1 py-3 rounded-2xl cc-grad-deep text-white text-xs font-bold shadow-lg disabled:opacity-50 hover:opacity-95 transition-all"
+              >
+                {isProcessing ? "Initiating..." : `Pay ₹${rechargeAmt}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <Section title="Subscription Plans">
         <div className="grid grid-cols-2 gap-3">
           {plans.map((p) => (

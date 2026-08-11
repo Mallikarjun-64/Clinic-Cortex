@@ -79,6 +79,15 @@ export function DoctorProfile() {
     awards: [] as string[]
   });
 
+  const [bankDetails, setBankDetails] = useState({
+    bankAccountHolder: "",
+    bankAccountNumber: "",
+    bankIfscCode: "",
+    panNumber: ""
+  });
+  const [savingBank, setSavingBank] = useState(false);
+  const [bankMsg, setBankMsg] = useState("");
+
   const [loading, setLoading] = useState(false);
 
   async function loadProfile() {
@@ -105,12 +114,38 @@ export function DoctorProfile() {
           awards: Array.isArray(d.awards) ? d.awards : typeof d.awards === 'string' ? [d.awards] : []
         });
       }
+
+      const payoutRes = await api.get('/payments/doctor/payouts');
+      if (payoutRes.success && payoutRes.bankDetails) {
+        setBankDetails({
+          bankAccountHolder: payoutRes.bankDetails.bank_account_holder || "",
+          bankAccountNumber: payoutRes.bankDetails.bank_account_number || "",
+          bankIfscCode: payoutRes.bankDetails.bank_ifsc_code || "",
+          panNumber: payoutRes.bankDetails.pan_number || ""
+        });
+      }
     } catch (err) {
       console.warn("Could not load doctor profile from API", err);
     } finally {
       setLoading(false);
     }
   }
+
+  const handleSaveBankDetails = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingBank(true);
+    try {
+      const res = await api.put('/payments/doctor/bank-details', bankDetails);
+      if (res.success) {
+        setBankMsg("Bank account details saved successfully for automated payouts!");
+        setTimeout(() => setBankMsg(""), 3500);
+      }
+    } catch (err: any) {
+      alert(err.message || "Failed to save bank details");
+    } finally {
+      setSavingBank(false);
+    }
+  };
 
   useEffect(() => {
     loadProfile();
@@ -454,16 +489,102 @@ export function DoctorProfile() {
               )}
               {profile.awards && profile.awards.length > 0 && (
                 <div>
-                  <p className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">Awards & Recognitions</p>
-                  <ul className="list-disc list-inside space-y-1 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                  <p className="text-xs font-black text-slate-400 dark:text-slate-550 uppercase tracking-wider mb-2">Awards & Honors</p>
+                  <div className="space-y-1 text-sm font-semibold text-slate-700 dark:text-slate-300">
                     {profile.awards.map((award, i) => (
-                      <li key={i}>{award}</li>
+                      <p key={i}>{award}</p>
                     ))}
-                  </ul>
+                  </div>
                 </div>
               )}
             </div>
           )}
+        </div>
+
+        {/* --- BANK ACCOUNT & AUTOMATED PAYOUT SETTINGS --- */}
+        <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 shadow-sm border border-slate-100 dark:border-slate-800">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h3 className="text-xl font-bold text-slate-800 dark:text-white">Bank Account & Payout Settings</h3>
+              <p className="text-xs text-slate-400 dark:text-slate-500 font-semibold mt-1">
+                Link your bank account to receive direct IMPS/NEFT automated payouts for completed consultations
+              </p>
+            </div>
+          </div>
+
+          {bankMsg && (
+            <div className="p-4 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 text-xs font-bold rounded-2xl mb-6 shadow-sm">
+              {bankMsg}
+            </div>
+          )}
+
+          <form onSubmit={handleSaveBankDetails} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-xs font-black text-slate-400 dark:text-slate-550 uppercase tracking-wider mb-2">
+                Account Holder Name
+              </label>
+              <input
+                type="text"
+                value={bankDetails.bankAccountHolder}
+                onChange={(e) => setBankDetails(prev => ({ ...prev, bankAccountHolder: e.target.value }))}
+                placeholder="Name as per Bank Account"
+                required
+                className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl text-slate-800 dark:text-white text-sm font-semibold outline-none focus:ring-2 focus:ring-[#163CC7]/20"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-black text-slate-400 dark:text-slate-550 uppercase tracking-wider mb-2">
+                Bank Account Number
+              </label>
+              <input
+                type="text"
+                value={bankDetails.bankAccountNumber}
+                onChange={(e) => setBankDetails(prev => ({ ...prev, bankAccountNumber: e.target.value }))}
+                placeholder="Enter 9 to 18 digit account number"
+                required
+                className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl text-slate-800 dark:text-white text-sm font-semibold outline-none focus:ring-2 focus:ring-[#163CC7]/20"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-black text-slate-400 dark:text-slate-550 uppercase tracking-wider mb-2">
+                Bank IFSC Code
+              </label>
+              <input
+                type="text"
+                value={bankDetails.bankIfscCode}
+                onChange={(e) => setBankDetails(prev => ({ ...prev, bankIfscCode: e.target.value.toUpperCase() }))}
+                placeholder="e.g. SBIN0001234"
+                required
+                className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl text-slate-800 dark:text-white text-sm font-semibold outline-none focus:ring-2 focus:ring-[#163CC7]/20"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-black text-slate-400 dark:text-slate-550 uppercase tracking-wider mb-2">
+                PAN Number (For RBI Settlement)
+              </label>
+              <input
+                type="text"
+                value={bankDetails.panNumber}
+                onChange={(e) => setBankDetails(prev => ({ ...prev, panNumber: e.target.value.toUpperCase() }))}
+                placeholder="e.g. ABCDE1234F"
+                required
+                className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl text-slate-800 dark:text-white text-sm font-semibold outline-none focus:ring-2 focus:ring-[#163CC7]/20"
+              />
+            </div>
+
+            <div className="md:col-span-2 flex justify-end">
+              <button
+                type="submit"
+                disabled={savingBank}
+                className="px-8 py-3.5 bg-[#163CC7] hover:bg-blue-700 text-white font-bold text-xs rounded-2xl shadow-lg shadow-blue-500/20 active:scale-95 transition-all disabled:opacity-50"
+              >
+                {savingBank ? "Saving Bank Account..." : "Save Bank Details"}
+              </button>
+            </div>
+          </form>
         </div>
       </div>
 
