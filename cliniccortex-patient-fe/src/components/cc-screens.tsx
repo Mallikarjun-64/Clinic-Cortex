@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Calendar, Clock, Star, MapPin, Video, Phone, Send, Paperclip,
   Heart, Activity, Droplet, Moon, Thermometer, Wind, ChevronRight,
@@ -7,6 +8,7 @@ import {
   Shield, FileText, Pencil, Stethoscope, Home as HomeIcon, MessageSquare,
   Siren, MapPinned, CheckCircle2, XCircle, RotateCcw, Bot,
   MicOff, VideoOff, MessageCircle, PhoneOff, Bell,
+  CreditCard, X, ShieldCheck,
 } from "lucide-react";
 import { useCC, LANGUAGES, type Screen } from "@/lib/cc-state";
 import { api } from "@/lib/api";
@@ -1264,7 +1266,7 @@ export function WalletScreen() {
       }
 
       // 2. If live Razorpay Key exists, launch Razorpay Checkout Modal
-      if (typeof window !== 'undefined' && window.Razorpay && orderRes.keyId && orderRes.keyId !== 'rzp_test_demo_key') {
+      if (typeof window !== 'undefined' && (window as any).Razorpay && orderRes.keyId && orderRes.keyId !== 'rzp_test_demo_key') {
         const options = {
           key: orderRes.keyId,
           amount: orderRes.order.amount,
@@ -1291,7 +1293,7 @@ export function WalletScreen() {
           theme: { color: '#163CC7' }
         };
 
-        const rzp = new window.Razorpay(options);
+        const rzp = new (window as any).Razorpay(options);
         rzp.open();
       } else {
         // Direct Verification Mode (Instant Test Top-Up)
@@ -1362,26 +1364,40 @@ export function WalletScreen() {
         </div>
       </div>
 
-      {/* Recharge Modal */}
-      {showRechargeModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-card border rounded-3xl p-6 max-w-md w-full text-center space-y-5 relative cc-pop shadow-2xl">
-            <div className="flex items-center justify-between border-b pb-3">
-              <h3 className="text-lg font-bold text-foreground">Recharge Wallet Balance</h3>
-              <button onClick={() => setShowRechargeModal(false)} className="p-1 hover:bg-muted rounded-xl">
-                <X className="w-5 h-5 text-muted-foreground" />
+      {/* Recharge Modal Portal */}
+      {showRechargeModal && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[99999] bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-7 max-w-md w-full shadow-2xl space-y-6 my-auto relative animate-in fade-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="flex items-start justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
+              <div>
+                <h3 className="text-xl font-extrabold text-slate-900 dark:text-white leading-tight">Recharge Wallet Balance</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-1">Add funds to your digital healthcare wallet</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowRechargeModal(false)}
+                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors -mr-1 -mt-1"
+              >
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Select Preset Amount</label>
-              <div className="grid grid-cols-3 gap-2">
+            {/* Presets */}
+            <div className="space-y-2.5 text-left">
+              <label className="text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                Select Preset Amount
+              </label>
+              <div className="grid grid-cols-3 gap-3">
                 {["500", "1000", "2000"].map((preset) => (
                   <button
                     key={preset}
+                    type="button"
                     onClick={() => setRechargeAmt(preset)}
-                    className={`py-2.5 rounded-xl text-xs font-bold border transition-all ${
-                      rechargeAmt === preset ? "bg-primary text-primary-foreground border-primary shadow-sm" : "bg-background border-border hover:bg-muted"
+                    className={`py-3.5 rounded-2xl text-xs font-bold border transition-all ${
+                      rechargeAmt === preset
+                        ? "bg-[#163CC7] text-white border-[#163CC7] shadow-lg shadow-blue-500/20 scale-[1.02]"
+                        : "bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
                     }`}
                   >
                     + ₹{preset}
@@ -1390,39 +1406,47 @@ export function WalletScreen() {
               </div>
             </div>
 
-            <div className="space-y-1 text-left">
-              <label className="text-xs font-bold text-muted-foreground">Or Enter Custom Amount (₹)</label>
+            {/* Custom Amount Input */}
+            <div className="space-y-2 text-left">
+              <label className="text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                Or Enter Custom Amount (₹)
+              </label>
               <input
                 type="number"
                 value={rechargeAmt}
                 onChange={(e) => setRechargeAmt(e.target.value)}
                 placeholder="Enter amount"
-                className="w-full px-4 py-3 bg-background border rounded-2xl text-lg font-extrabold text-center outline-none focus:ring-2 focus:ring-primary/20"
+                className="w-full px-4 py-3.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-2xl text-xl font-black text-center text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-[#163CC7]/30 focus:border-[#163CC7] transition-all"
               />
             </div>
 
-            <div className="p-3 rounded-2xl bg-primary/10 border border-primary/20 text-xs text-primary font-semibold flex items-center gap-2">
+            {/* Security Badge */}
+            <div className="p-3.5 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/50 text-xs text-[#163CC7] dark:text-blue-400 font-semibold flex items-center justify-center gap-2">
               <ShieldCheck className="w-4 h-4 shrink-0" />
               <span>Secured by Razorpay • UPI, GPay, Cards & NetBanking</span>
             </div>
 
-            <div className="flex gap-3 pt-2">
+            {/* Actions */}
+            <div className="flex gap-3 pt-1">
               <button
+                type="button"
                 onClick={() => setShowRechargeModal(false)}
-                className="flex-1 py-3 rounded-2xl border text-xs font-bold hover:bg-muted transition-colors"
+                className="flex-1 py-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
               >
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={handleRazorpayRecharge}
                 disabled={isProcessing}
-                className="flex-1 py-3 rounded-2xl cc-grad-deep text-white text-xs font-bold shadow-lg disabled:opacity-50 hover:opacity-95 transition-all"
+                className="flex-1 py-3.5 rounded-2xl bg-[#163CC7] hover:bg-blue-700 text-white text-xs font-bold shadow-lg shadow-blue-500/25 active:scale-95 disabled:opacity-50 transition-all"
               >
-                {isProcessing ? "Initiating..." : `Pay ₹${rechargeAmt}`}
+                {isProcessing ? "Initiating..." : `Pay ₹${rechargeAmt || 0}`}
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       <Section title="Subscription Plans">
