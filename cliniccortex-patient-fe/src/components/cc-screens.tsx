@@ -1265,29 +1265,46 @@ export function WalletScreen() {
         return;
       }
 
-      // 2. If live Razorpay Key exists, launch Razorpay Checkout Modal
-      if (typeof window !== 'undefined' && (window as any).Razorpay && orderRes.keyId && orderRes.keyId !== 'rzp_test_demo_key') {
+      // 2. Launch Razorpay Payment Gateway Modal (PhonePe, GPay, UPI, Cards, NetBanking)
+      const rzpKey = (orderRes.keyId && orderRes.keyId !== 'rzp_test_demo_key') 
+        ? orderRes.keyId 
+        : (import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_test_TOraKUPamPulkW');
+
+      if (typeof window !== 'undefined' && (window as any).Razorpay) {
+        const isSimOrder = orderRes.order?.id?.startsWith('order_test_');
+
         const options = {
-          key: orderRes.keyId,
-          amount: orderRes.order.amount,
-          currency: orderRes.order.currency || 'INR',
-          name: 'ClinicCortex Health',
-          description: 'Digital Wallet Recharge',
-          order_id: orderRes.order.id,
+          key: rzpKey,
+          amount: orderRes.order?.amount || Math.round(numericAmt * 100),
+          currency: orderRes.order?.currency || 'INR',
+          name: 'ClinicCortex Healthcare',
+          description: `Digital Wallet Recharge (₹${numericAmt})`,
+          order_id: isSimOrder ? undefined : orderRes.order?.id,
+          prefill: {
+            name: 'Patient Account',
+            email: 'patient@cliniccortex.com',
+            contact: '9876543210'
+          },
           handler: async function (response: any) {
             const verifyRes = await api.post('/payments/verify-recharge', {
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature,
-              amount: numericAmt
+              razorpay_order_id: response.razorpay_order_id || orderRes.order?.id,
+              razorpay_payment_id: response.razorpay_payment_id || `pay_${Date.now()}`,
+              razorpay_signature: response.razorpay_signature || 'sig_demo',
+              amount: numericAmt,
+              isTestMode: isSimOrder
             });
 
             if (verifyRes.success) {
-              alert(verifyRes.message || "Wallet recharged successfully!");
+              alert(`Payment Successful! ₹${numericAmt} has been credited to your Digital Wallet.`);
               setShowRechargeModal(false);
               fetchWallet();
             } else {
               alert(verifyRes.message || "Payment verification failed.");
+            }
+          },
+          modal: {
+            ondismiss: function() {
+              setIsProcessing(false);
             }
           },
           theme: { color: '#163CC7' }
@@ -1296,21 +1313,7 @@ export function WalletScreen() {
         const rzp = new (window as any).Razorpay(options);
         rzp.open();
       } else {
-        // Direct Verification Mode (Instant Test Top-Up)
-        const verifyRes = await api.post('/payments/verify-recharge', {
-          razorpay_order_id: orderRes.order.id,
-          razorpay_payment_id: `pay_sim_${Date.now()}`,
-          amount: numericAmt,
-          isTestMode: true
-        });
-
-        if (verifyRes.success) {
-          alert(verifyRes.message || `Successfully credited ₹${numericAmt} to your wallet!`);
-          setShowRechargeModal(false);
-          fetchWallet();
-        } else {
-          alert(verifyRes.message || "Failed to process wallet top-up.");
-        }
+        alert("Razorpay Payment Gateway SDK failed to load. Please refresh your page.");
       }
     } catch (err: any) {
       alert(err.message || "Payment processing error.");
