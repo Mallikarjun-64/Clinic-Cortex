@@ -94,37 +94,41 @@ router.get('/scrutiny', authenticateToken, async (req, res) => {
   try {
     const doctorId = req.user.id;
 
-    // 1. Pending Consultation Requests
-    const pendingReqs = await query(
-      `SELECT COUNT(*) FROM consultation_requests WHERE doctor_id = $1 AND status = 'Pending'`,
-      [doctorId]
-    );
+    let pendingCount = 0;
+    let waitingCount = 0;
+    let unreadCount = 0;
+    let recordCount = 0;
 
-    // 2. Waiting Patient Appointments
-    const waitingAppts = await query(
-      `SELECT COUNT(*) FROM appointments WHERE doctor_id = $1 AND status = 'Waiting'`,
-      [doctorId]
-    );
+    try {
+      const res1 = await query(`SELECT COUNT(*) FROM consultation_requests WHERE doctor_id = $1 AND status = 'Pending'`, [doctorId]);
+      pendingCount = parseInt(res1.rows[0].count || '0');
+    } catch (e) {}
 
-    // 3. Unread Patient Messages
-    const unreadMsgs = await query(
-      `SELECT COUNT(*) FROM messages WHERE doctor_id = $1 AND sender_role = 'patient' AND is_read = false`,
-      [doctorId]
-    );
+    try {
+      const res2 = await query(`SELECT COUNT(*) FROM appointments WHERE doctor_id = $1 AND status = 'Waiting'`, [doctorId]);
+      waitingCount = parseInt(res2.rows[0].count || '0');
+    } catch (e) {}
 
-    // 4. Patient Record Updates
-    const recordUpdates = await query(
-      `SELECT COUNT(*) FROM medical_records mr 
-       JOIN appointments a ON mr.patient_id = a.patient_id 
-       WHERE a.doctor_id = $1 AND mr.created_at >= NOW() - INTERVAL '7 days'`,
-      [doctorId]
-    );
+    try {
+      const res3 = await query(`SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND is_read = false`, [doctorId]);
+      unreadCount = parseInt(res3.rows[0].count || '0');
+    } catch (e) {}
+
+    try {
+      const res4 = await query(
+        `SELECT COUNT(*) FROM medical_records mr 
+         JOIN appointments a ON mr.patient_id = a.patient_id 
+         WHERE a.doctor_id = $1 AND mr.created_at >= NOW() - INTERVAL '7 days'`,
+        [doctorId]
+      );
+      recordCount = parseInt(res4.rows[0].count || '0');
+    } catch (e) {}
 
     const items = [
-      { id: '1', label: 'Consultation Requests', count: parseInt(pendingReqs.rows[0].count || '0'), status: 'Pending' },
-      { id: '2', label: 'Waiting Patient Appointments', count: parseInt(waitingAppts.rows[0].count || '0'), status: 'Waiting' },
-      { id: '3', label: 'Unread Patient Inquiries', count: parseInt(unreadMsgs.rows[0].count || '0'), status: 'Action Needed' },
-      { id: '4', label: 'Patient Record Updates', count: parseInt(recordUpdates.rows[0].count || '0'), status: 'Recent' }
+      { id: '1', label: 'Consultation Requests', count: pendingCount, status: 'Pending' },
+      { id: '2', label: 'Waiting Patient Appointments', count: waitingCount, status: 'Waiting' },
+      { id: '3', label: 'Unread Patient Inquiries', count: unreadCount, status: 'Action Needed' },
+      { id: '4', label: 'Patient Record Updates', count: recordCount, status: 'Recent' }
     ];
 
     res.status(200).json({

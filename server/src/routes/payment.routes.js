@@ -152,8 +152,8 @@ router.post('/verify-recharge', authenticatePatientToken, async (req, res) => {
     const orderIdStr = razorpay_order_id || `ord_sim_${Date.now()}`;
 
     await query(
-      `INSERT INTO wallet_transactions (patient_id, transaction_type, amount, description, razorpay_payment_id, razorpay_order_id)
-       VALUES ($1, 'Credit', $2, 'Online Wallet Recharge', $3, $4)`,
+      `INSERT INTO wallet_transactions (patient_id, type, transaction_type, amount, description, razorpay_payment_id, razorpay_order_id)
+       VALUES ($1, 'Top-up', 'Credit', $2, 'Online Wallet Recharge', $3, $4)`,
       [patientId, creditAmount, paymentIdStr, orderIdStr]
     );
 

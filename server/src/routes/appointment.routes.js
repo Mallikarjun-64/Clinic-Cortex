@@ -189,6 +189,31 @@ router.post('/', authenticateEitherUser, appointmentValidationRules, async (req,
       finalDoctorId = doctorId;
       finalPatientId = req.patient.id; // Patient's own authenticated ID
 
+      // Check Doctor Fees
+      const docRes = await query('SELECT clinic_fee, online_fee, home_fee FROM doctors WHERE id = $1', [doctorId]);
+      const doc = docRes.rows[0] || {};
+      const fee = visitType === 'Clinic' ? parseFloat(doc.clinic_fee || 500) :
+                  visitType === 'Video' ? parseFloat(doc.online_fee || 400) : parseFloat(doc.home_fee || 800);
+
+      // Check Patient Wallet Balance
+      const walletRes = await query('SELECT balance FROM patient_wallets WHERE patient_id = $1', [req.patient.id]);
+      const currentBalance = walletRes.rows.length > 0 ? parseFloat(walletRes.rows[0].balance || 0) : 0;
+
+      if (currentBalance < fee) {
+        return res.status(400).json({
+          success: false,
+          message: `Insufficient wallet balance (Available: ₹${currentBalance.toFixed(2)}). Consultation fee is ₹${fee.toFixed(2)}. Please recharge your digital wallet.`
+        });
+      }
+
+      // Deduct fee upfront from Patient Wallet
+      await query('UPDATE patient_wallets SET balance = balance - $1, updated_at = NOW() WHERE patient_id = $2', [fee, req.patient.id]);
+      await query(
+        `INSERT INTO wallet_transactions (patient_id, type, transaction_type, amount, description)
+         VALUES ($1, 'Booking', 'Debit', $2, $3)`,
+        [req.patient.id, fee, `Consultation Booking Fee (${visitType || 'General'})`]
+      );
+
       // Retrieve patient's name and age from DB if not provided
       const patientInfo = await query('SELECT name, age FROM patients WHERE id = $1', [req.patient.id]);
       if (patientInfo.rows.length > 0) {
@@ -320,6 +345,25 @@ router.patch('/:id/status', authenticateEitherUser, async (req, res) => {
 
       if (status === 'Completed') {
         processDoctorPayout(id).catch((e) => console.warn('Doctor payout trigger error', e));
+      } else if (status === 'Cancelled' && updatedApt.patient_id) {
+        // Refund fee to patient wallet upon cancellation
+        (async () => {
+          try {
+            const docRes = await query('SELECT clinic_fee, online_fee, home_fee FROM doctors WHERE id = $1', [updatedApt.doctor_id]);
+            const doc = docRes.rows[0] || {};
+            const refundFee = updatedApt.visit_type === 'Clinic' ? parseFloat(doc.clinic_fee || 500) :
+                              updatedApt.visit_type === 'Video' ? parseFloat(doc.online_fee || 400) : parseFloat(doc.home_fee || 800);
+
+            await query('UPDATE patient_wallets SET balance = balance + $1, updated_at = NOW() WHERE patient_id = $2', [refundFee, updatedApt.patient_id]);
+            await query(
+              `INSERT INTO wallet_transactions (patient_id, type, transaction_type, amount, description)
+               VALUES ($1, 'Refund', 'Credit', $2, $3)`,
+              [updatedApt.patient_id, refundFee, `Appointment Cancellation Refund (${updatedApt.visit_type || 'General'})`]
+            );
+          } catch (refundErr) {
+            console.warn('Refund processing notice:', refundErr.message);
+          }
+        })();
       }
     }
 
