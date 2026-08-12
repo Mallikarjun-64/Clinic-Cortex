@@ -64,6 +64,11 @@ CREATE TABLE doctors (
     bank_name       VARCHAR(200),
     bank_account_no VARCHAR(30),
     bank_ifsc       VARCHAR(20),
+    bank_account_holder VARCHAR(100),
+    bank_account_number VARCHAR(50),
+    bank_ifsc_code  VARCHAR(20),
+    pan_number      VARCHAR(20),
+    razorpay_account_id VARCHAR(100),
     gst_no          VARCHAR(30),
     emergency_name  VARCHAR(200),
     emergency_relation VARCHAR(100),
@@ -117,6 +122,7 @@ CREATE TABLE appointments (
     condition         VARCHAR(200),
     notes             TEXT,
     vitals            JSONB,              -- {blood_glucose, hrv, spo2, temp, sleep, rhr}
+    is_refunded       BOOLEAN DEFAULT FALSE,
     created_at        TIMESTAMP DEFAULT NOW(),
     updated_at        TIMESTAMP DEFAULT NOW()
 );
@@ -308,13 +314,28 @@ CREATE TABLE IF NOT EXISTS patient_wallets (
 );
 
 CREATE TABLE IF NOT EXISTS wallet_transactions (
-    id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    patient_id    UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-    amount        DECIMAL(10,2) NOT NULL,
-    type          VARCHAR(50) NOT NULL, -- Top-up | Subscription | Pharmacy Purchase | Consultation Fee
-    description   TEXT,
-    reference_id  VARCHAR(100),
-    created_at    TIMESTAMP DEFAULT NOW()
+    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    patient_id          UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+    amount              DECIMAL(10,2) NOT NULL,
+    type                VARCHAR(50) DEFAULT 'Top-up', -- Top-up | Subscription | Pharmacy Purchase | Booking | Refund
+    transaction_type    VARCHAR(20) DEFAULT 'Credit', -- Credit | Debit | Refund
+    description         TEXT,
+    reference_id        VARCHAR(100),
+    razorpay_payment_id VARCHAR(100),
+    razorpay_order_id   VARCHAR(100),
+    created_at          TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS doctor_payouts (
+    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    doctor_id           UUID NOT NULL REFERENCES doctors(id) ON DELETE CASCADE,
+    appointment_id      UUID REFERENCES appointments(id) ON DELETE SET NULL,
+    amount              NUMERIC(10, 2) NOT NULL,
+    payout_status       VARCHAR(50) DEFAULT 'Pending',
+    razorpay_transfer_id VARCHAR(100),
+    failure_reason      TEXT,
+    created_at          TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at          TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- ============================================

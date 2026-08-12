@@ -18,13 +18,22 @@ async function runMigration() {
       CREATE TABLE IF NOT EXISTS wallet_transactions (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-        transaction_type VARCHAR(20) NOT NULL CHECK (transaction_type IN ('Credit', 'Debit', 'Refund')),
         amount NUMERIC(10, 2) NOT NULL,
+        type VARCHAR(50) DEFAULT 'Top-up',
+        transaction_type VARCHAR(20) DEFAULT 'Credit',
         description TEXT,
+        reference_id VARCHAR(100),
         razorpay_payment_id VARCHAR(100),
         razorpay_order_id VARCHAR(100),
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
+
+      ALTER TABLE wallet_transactions
+      ADD COLUMN IF NOT EXISTS type VARCHAR(50) DEFAULT 'Top-up',
+      ADD COLUMN IF NOT EXISTS transaction_type VARCHAR(20) DEFAULT 'Credit',
+      ADD COLUMN IF NOT EXISTS reference_id VARCHAR(100),
+      ADD COLUMN IF NOT EXISTS razorpay_payment_id VARCHAR(100),
+      ADD COLUMN IF NOT EXISTS razorpay_order_id VARCHAR(100);
 
       ALTER TABLE doctors 
       ADD COLUMN IF NOT EXISTS razorpay_account_id VARCHAR(100),
@@ -32,6 +41,9 @@ async function runMigration() {
       ADD COLUMN IF NOT EXISTS bank_ifsc_code VARCHAR(20),
       ADD COLUMN IF NOT EXISTS bank_account_holder VARCHAR(100),
       ADD COLUMN IF NOT EXISTS pan_number VARCHAR(20);
+
+      ALTER TABLE appointments
+      ADD COLUMN IF NOT EXISTS is_refunded BOOLEAN DEFAULT FALSE;
 
       CREATE TABLE IF NOT EXISTS doctor_payouts (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

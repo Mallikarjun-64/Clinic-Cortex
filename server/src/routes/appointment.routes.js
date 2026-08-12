@@ -1,5 +1,5 @@
 import express from 'express';
-import { query } from '../config/db.js';
+import { query, pool } from '../config/db.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { appointmentValidationRules, validateUuidParam } from '../middleware/validate.js';
 import { verifyToken, verifyPatientToken } from '../utils/jwt.js';
@@ -152,9 +152,12 @@ router.get('/:id', authenticateEitherUser, async (req, res) => {
 });
 
 // @route   POST /api/appointments
+// @route   POST /api/appointments
 // @desc    Create a new appointment slot booking (Doctor or Patient caller)
 router.post('/', authenticateEitherUser, appointmentValidationRules, async (req, res) => {
   const { doctorId, patientId, patientName, patientAge, visitType, date, time, condition, notes, vitals } = req.body;
+
+  const client = await pool.connect();
 
   try {
     let finalDoctorId;
@@ -162,13 +165,15 @@ router.post('/', authenticateEitherUser, appointmentValidationRules, async (req,
     let finalPatientName = patientName;
     let finalPatientAge = patientAge;
 
+    await client.query('BEGIN');
+
     if (req.isDoctor) {
       // Doctor request: doctor_id comes from authenticated doctor token, patientId comes from req.body
       finalDoctorId = req.user.id;
       finalPatientId = patientId || null;
 
       if (patientId) {
-        const patientCheck = await query('SELECT name, age FROM patients WHERE id = $1', [patientId]);
+        const patientCheck = await client.query('SELECT name, age FROM patients WHERE id = $1', [patientId]);
         if (patientCheck.rows.length > 0) {
           finalPatientName = patientCheck.rows[0].name;
           finalPatientAge = patientCheck.rows[0].age;
@@ -177,53 +182,66 @@ router.post('/', authenticateEitherUser, appointmentValidationRules, async (req,
     } else if (req.isPatient) {
       // Patient request: doctor_id comes from req.body.doctorId
       if (!doctorId) {
+        await client.query('ROLLBACK');
+        client.release();
         return res.status(400).json({ success: false, message: 'doctorId is required' });
       }
 
       // Validate doctorId exists in doctors table
-      const doctorCheck = await query('SELECT id FROM doctors WHERE id = $1', [doctorId]);
+      const doctorCheck = await client.query('SELECT id, clinic_fee, online_fee, home_fee FROM doctors WHERE id = $1', [doctorId]);
       if (doctorCheck.rows.length === 0) {
+        await client.query('ROLLBACK');
+        client.release();
         return res.status(404).json({ success: false, message: 'Doctor not found' });
       }
 
       finalDoctorId = doctorId;
       finalPatientId = req.patient.id; // Patient's own authenticated ID
 
-      // Check Doctor Fees
-      const docRes = await query('SELECT clinic_fee, online_fee, home_fee FROM doctors WHERE id = $1', [doctorId]);
-      const doc = docRes.rows[0] || {};
+      const doc = doctorCheck.rows[0] || {};
       const fee = visitType === 'Clinic' ? parseFloat(doc.clinic_fee || 500) :
                   visitType === 'Video' ? parseFloat(doc.online_fee || 400) : parseFloat(doc.home_fee || 800);
 
-      // Check Patient Wallet Balance
-      const walletRes = await query('SELECT balance FROM patient_wallets WHERE patient_id = $1', [req.patient.id]);
-      const currentBalance = walletRes.rows.length > 0 ? parseFloat(walletRes.rows[0].balance || 0) : 0;
+      // Lock Patient Wallet Balance row for UPDATE
+      let walletRes = await client.query('SELECT balance FROM patient_wallets WHERE patient_id = $1 FOR UPDATE', [req.patient.id]);
+      if (walletRes.rows.length === 0) {
+        // Initialize wallet if absent
+        walletRes = await client.query(
+          `INSERT INTO patient_wallets (patient_id, balance) VALUES ($1, 0.00) RETURNING balance`,
+          [req.patient.id]
+        );
+      }
+
+      const currentBalance = parseFloat(walletRes.rows[0].balance || 0);
 
       if (currentBalance < fee) {
+        await client.query('ROLLBACK');
+        client.release();
         return res.status(400).json({
           success: false,
           message: `Insufficient wallet balance (Available: ₹${currentBalance.toFixed(2)}). Consultation fee is ₹${fee.toFixed(2)}. Please recharge your digital wallet.`
         });
       }
 
-      // Deduct fee upfront from Patient Wallet
-      await query('UPDATE patient_wallets SET balance = balance - $1, updated_at = NOW() WHERE patient_id = $2', [fee, req.patient.id]);
-      await query(
-        `INSERT INTO wallet_transactions (patient_id, type, transaction_type, amount, description)
-         VALUES ($1, 'Booking', 'Debit', $2, $3)`,
-        [req.patient.id, fee, `Consultation Booking Fee (${visitType || 'General'})`]
+      // Deduct fee upfront from Patient Wallet inside transaction
+      await client.query('UPDATE patient_wallets SET balance = balance - $1, updated_at = NOW() WHERE patient_id = $2', [fee, req.patient.id]);
+      const refId = `BOOK-${Date.now()}`;
+      await client.query(
+        `INSERT INTO wallet_transactions (patient_id, amount, type, transaction_type, description, reference_id)
+         VALUES ($1, $2, 'Booking', 'Debit', $3, $4)`,
+        [req.patient.id, fee, `Consultation Booking Fee (${visitType || 'General'})`, refId]
       );
 
       // Retrieve patient's name and age from DB if not provided
-      const patientInfo = await query('SELECT name, age FROM patients WHERE id = $1', [req.patient.id]);
+      const patientInfo = await client.query('SELECT name, age FROM patients WHERE id = $1', [req.patient.id]);
       if (patientInfo.rows.length > 0) {
         if (!finalPatientName) finalPatientName = patientInfo.rows[0].name;
         if (!finalPatientAge) finalPatientAge = patientInfo.rows[0].age;
       }
     }
 
-    // Perform insertion
-    const result = await query(
+    // Perform appointment insertion inside transaction
+    const result = await client.query(
       `INSERT INTO appointments (doctor_id, patient_id, patient_name, patient_age, visit_type, appointment_date, appointment_time, status, condition, notes, vitals)
        VALUES ($1, $2, $3, $4, $5, $6, $7, 'Scheduled', $8, $9, $10)
        RETURNING *`,
@@ -237,9 +255,11 @@ router.post('/', authenticateEitherUser, appointmentValidationRules, async (req,
         time,
         condition || 'General Consult',
         notes || null,
-        vitals || '{}'
+        vitals ? (typeof vitals === 'string' ? vitals : JSON.stringify(vitals)) : '{}'
       ]
     );
+
+    await client.query('COMMIT');
 
     res.status(201).json({
       success: true,
@@ -247,8 +267,11 @@ router.post('/', authenticateEitherUser, appointmentValidationRules, async (req,
       appointment: result.rows[0]
     });
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error('Create Appointment Error:', err);
     res.status(500).json({ success: false, message: 'Server error scheduling appointment' });
+  } finally {
+    client.release();
   }
 });
 
@@ -345,25 +368,40 @@ router.patch('/:id/status', authenticateEitherUser, async (req, res) => {
 
       if (status === 'Completed') {
         processDoctorPayout(id).catch((e) => console.warn('Doctor payout trigger error', e));
-      } else if (status === 'Cancelled' && updatedApt.patient_id) {
-        // Refund fee to patient wallet upon cancellation
-        (async () => {
-          try {
-            const docRes = await query('SELECT clinic_fee, online_fee, home_fee FROM doctors WHERE id = $1', [updatedApt.doctor_id]);
+      } else if (status === 'Cancelled' && updatedApt.patient_id && !updatedApt.is_refunded) {
+        // Refund fee to patient wallet upon cancellation in atomic transaction
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+
+          // Double check is_refunded under lock
+          const aptCheck = await client.query('SELECT is_refunded FROM appointments WHERE id = $1 FOR UPDATE', [id]);
+          if (!aptCheck.rows[0]?.is_refunded) {
+            const docRes = await client.query('SELECT clinic_fee, online_fee, home_fee FROM doctors WHERE id = $1', [updatedApt.doctor_id]);
             const doc = docRes.rows[0] || {};
             const refundFee = updatedApt.visit_type === 'Clinic' ? parseFloat(doc.clinic_fee || 500) :
                               updatedApt.visit_type === 'Video' ? parseFloat(doc.online_fee || 400) : parseFloat(doc.home_fee || 800);
 
-            await query('UPDATE patient_wallets SET balance = balance + $1, updated_at = NOW() WHERE patient_id = $2', [refundFee, updatedApt.patient_id]);
-            await query(
-              `INSERT INTO wallet_transactions (patient_id, type, transaction_type, amount, description)
-               VALUES ($1, 'Refund', 'Credit', $2, $3)`,
-              [updatedApt.patient_id, refundFee, `Appointment Cancellation Refund (${updatedApt.visit_type || 'General'})`]
+            await client.query('UPDATE patient_wallets SET balance = balance + $1, updated_at = NOW() WHERE patient_id = $2', [refundFee, updatedApt.patient_id]);
+
+            const refId = `REF-${Date.now()}`;
+            await client.query(
+              `INSERT INTO wallet_transactions (patient_id, amount, type, transaction_type, description, reference_id)
+               VALUES ($1, $2, 'Refund', 'Credit', $3, $4)`,
+              [updatedApt.patient_id, refundFee, `Appointment Cancellation Refund (${updatedApt.visit_type || 'General'})`, refId]
             );
-          } catch (refundErr) {
-            console.warn('Refund processing notice:', refundErr.message);
+
+            await client.query('UPDATE appointments SET is_refunded = true, updated_at = NOW() WHERE id = $1', [id]);
+            updatedApt.is_refunded = true;
           }
-        })();
+
+          await client.query('COMMIT');
+        } catch (refundErr) {
+          await client.query('ROLLBACK');
+          console.error('Refund processing error:', refundErr);
+        } finally {
+          client.release();
+        }
       }
     }
 

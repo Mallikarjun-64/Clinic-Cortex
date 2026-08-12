@@ -98,8 +98,8 @@ router.post('/topup', authenticatePatientToken, async (req, res) => {
     // Insert transaction log
     const refId = `TOP-${Date.now()}`;
     await client.query(
-      `INSERT INTO wallet_transactions (patient_id, amount, type, description, reference_id)
-       VALUES ($1, $2, 'Top-up', 'Wallet balance top-up', $3)`,
+      `INSERT INTO wallet_transactions (patient_id, amount, type, transaction_type, description, reference_id)
+       VALUES ($1, $2, 'Top-up', 'Credit', 'Wallet balance top-up', $3)`,
       [req.patient.id, numAmount, refId]
     );
 
@@ -187,8 +187,8 @@ router.post('/subscribe', authenticatePatientToken, async (req, res) => {
     // Log transaction
     const refId = `SUB-${Date.now()}`;
     await client.query(
-      `INSERT INTO wallet_transactions (patient_id, amount, type, description, reference_id)
-       VALUES ($1, $2, 'Subscription', $3, $4)`,
+      `INSERT INTO wallet_transactions (patient_id, amount, type, transaction_type, description, reference_id)
+       VALUES ($1, $2, 'Subscription', 'Debit', $3, $4)`,
       [req.patient.id, planPrice, `Subscription to ${plan.name}`, refId]
     );
 

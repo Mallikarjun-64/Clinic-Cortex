@@ -1,7 +1,7 @@
 import express from 'express';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
-import { query } from '../config/db.js';
+import { query, pool } from '../config/db.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { authenticatePatientToken } from '../middleware/patientAuth.js';
 
@@ -87,7 +87,12 @@ router.post('/create-order', authenticatePatientToken, async (req, res) => {
           }
         };
 
-        const order = await razorpay.orders.create(options);
+        const orderPromise = razorpay.orders.create(options);
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Razorpay API response timeout')), 3500)
+        );
+
+        const order = await Promise.race([orderPromise, timeoutPromise]);
         if (order && order.id) {
           return res.status(200).json({
             success: true,
@@ -129,43 +134,46 @@ router.post('/verify-recharge', authenticatePatientToken, async (req, res) => {
     return res.status(400).json({ success: false, message: 'Invalid recharge amount' });
   }
 
-  try {
-    // 1. If Razorpay keys are configured, verify HMAC signature
-    if (razorpay && !isTestMode) {
-      const generatedSignature = crypto
-        .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
-        .update(`${razorpay_order_id}|${razorpay_payment_id}`)
-        .digest('hex');
+  // 1. Signature verification if Razorpay environment secret exists and signature provided
+  if (razorpay && process.env.RAZORPAY_KEY_SECRET && !isTestMode && razorpay_signature) {
+    const generatedSignature = crypto
+      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+      .digest('hex');
 
-      if (generatedSignature !== razorpay_signature) {
-        return res.status(400).json({ success: false, message: 'Invalid payment signature' });
-      }
+    if (generatedSignature !== razorpay_signature) {
+      return res.status(400).json({ success: false, message: 'Invalid payment signature' });
     }
+  }
 
-    // 2. Perform DB Transaction to credit wallet and record ledger entry
-    await query('BEGIN');
+  const client = await pool.connect();
 
-    await query(
+  try {
+    // 2. Perform DB Transaction on dedicated pool client
+    await client.query('BEGIN');
+
+    const walletRes = await client.query(
       `INSERT INTO patient_wallets (patient_id, balance) 
        VALUES ($1, $2)
        ON CONFLICT (patient_id) 
-       DO UPDATE SET balance = patient_wallets.balance + $2, updated_at = NOW()`,
+       DO UPDATE SET balance = patient_wallets.balance + $2, updated_at = NOW()
+       RETURNING *`,
       [patientId, creditAmount]
     );
 
     const paymentIdStr = razorpay_payment_id || `pay_sim_${Date.now()}`;
     const orderIdStr = razorpay_order_id || `ord_sim_${Date.now()}`;
+    const refIdStr = `TOP-${Date.now()}`;
 
-    await query(
-      `INSERT INTO wallet_transactions (patient_id, type, transaction_type, amount, description, razorpay_payment_id, razorpay_order_id)
-       VALUES ($1, 'Top-up', 'Credit', $2, 'Online Wallet Recharge', $3, $4)`,
-      [patientId, creditAmount, paymentIdStr, orderIdStr]
+    await client.query(
+      `INSERT INTO wallet_transactions (patient_id, amount, type, transaction_type, description, reference_id, razorpay_payment_id, razorpay_order_id)
+       VALUES ($1, $2, 'Top-up', 'Credit', 'Online Wallet Recharge', $3, $4, $5)`,
+      [patientId, creditAmount, refIdStr, paymentIdStr, orderIdStr]
     );
 
-    await query('COMMIT');
+    await client.query('COMMIT');
 
-    const walletRes = await query('SELECT * FROM patient_wallets WHERE patient_id = $1', [patientId]);
-    const txRes = await query(
+    const txRes = await client.query(
       `SELECT * FROM wallet_transactions WHERE patient_id = $1 ORDER BY created_at DESC LIMIT 20`,
       [patientId]
     );
@@ -177,9 +185,11 @@ router.post('/verify-recharge', authenticatePatientToken, async (req, res) => {
       transactions: txRes.rows
     });
   } catch (err) {
-    await query('ROLLBACK');
+    await client.query('ROLLBACK');
     console.error('Verify Recharge Error:', err);
     res.status(500).json({ success: false, message: 'Server error updating wallet balance' });
+  } finally {
+    client.release();
   }
 });
 
@@ -252,6 +262,13 @@ router.get('/doctor/payouts', authenticateToken, async (req, res) => {
 // Helper function to process automated payouts to Doctor Bank Account
 export async function processDoctorPayout(appointmentId) {
   try {
+    // Check if payout already processed for this appointment
+    const existingPayout = await query('SELECT id FROM doctor_payouts WHERE appointment_id = $1', [appointmentId]);
+    if (existingPayout.rows.length > 0) {
+      console.log(`Doctor payout already processed for appointment ${appointmentId}`);
+      return;
+    }
+
     const aptRes = await query(
       `SELECT a.*, d.razorpay_account_id, d.bank_account_number, d.bank_ifsc_code, d.bank_account_holder, d.clinic_fee, d.online_fee, d.home_fee
        FROM appointments a
